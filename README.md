@@ -2,7 +2,7 @@
 
 A simple, cross-platform cryptographic utility built with C++, FLTK, and OpenSSL.
 
-![Screenshot](screenshot.png)  <!-- 預留給您的應用程式截圖 -->
+![Screenshot](src/app.png)
 
 ## Features
 

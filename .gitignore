@@ -1,0 +1,38 @@
+# CMake
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+CTestTestfile.cmake
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# CLion
+.idea/
+
+# Visual Studio
+*.sln
+*.suo
+*.vcxproj*
+*.VC.db
+
+# Executables and Libraries
+*.exe
+*.dll
+*.so
+*.a
+*.lib
+*.dylib
+
+# Object files
+*.o
+*.obj
+*.lo
+
+# Other
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db

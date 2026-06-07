@@ -1,0 +1,33 @@
+#include <windows.h>
+
+1 ICON "app.ico"
+101 RCDATA "app.png"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     0,1,0,0
+PRODUCTVERSION  0,1,0,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0
+FILEOS          VOS__WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName",      "JohnnyCage Studio"
+            VALUE "FileDescription",  "Kitana Cryptool - Crypto Engine Matrix"
+            VALUE "FileVersion",      "0.1.0.0"
+            VALUE "InternalName",     "KitanaCryptool"
+            VALUE "LegalCopyright",   "Copyright (c) 2026 JohnnyCage Studio. All rights reserved."
+            VALUE "OriginalFilename", "Kitana_Cryptool.exe"
+            VALUE "ProductName",      "Kitana Cryptool"
+            VALUE "ProductVersion",   "0.1.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END

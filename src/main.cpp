@@ -14,7 +14,7 @@
 #include <FL/Fl_Secret_Input.H>
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Text_Display.H>
-#include <FL/Fl_Text_Buffer.H>
+#include <FL/Fl_Text_buffer.H>
 #include <FL/Fl_Progress.H>
 #include <FL/Fl_Value_Slider.H>
 #include <FL/Fl_Sys_Menu_Bar.H>
@@ -292,7 +292,15 @@ int main(int argc, char** argv) {
 
     win->end();
     win->position((Fl::w() - win->w()) / 2, (Fl::h() - win->h()) / 2);
-    win->show(argc, argv);
 
+#ifdef _WIN32
+    HICON hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(1));
+    if (hIcon) {
+        win->icon((const void*)hIcon);
+    }
+#endif
+
+    win->show(argc, argv);
+    
     return Fl::run();
 }

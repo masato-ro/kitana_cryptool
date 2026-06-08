@@ -14,10 +14,11 @@
 #include <FL/Fl_Secret_Input.H>
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Text_Display.H>
-#include <FL/Fl_Text_buffer.H>
+#include <FL/Fl_Text_Buffer.H>
 #include <FL/Fl_Progress.H>
 #include <FL/Fl_Value_Slider.H>
 #include <FL/Fl_Sys_Menu_Bar.H>
+#include <FL/Fl_PNG_Image.H>
 
 #include "ui_callbacks.h"
 
@@ -297,6 +298,16 @@ int main(int argc, char** argv) {
     HICON hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(1));
     if (hIcon) {
         win->icon((const void*)hIcon);
+    }
+#else
+    // ─── Mac / Linux Platform: Load app.png directly ───
+    // Make sure app.png is copied to the same directory as the executable (or project root)
+    // If you place the image in the project root, the path can be "app.png" 
+    Fl_PNG_Image* mac_icon = new Fl_PNG_Image("app.png");
+    
+    // Defensive code: ensure the image is loaded before applying it
+    if (mac_icon && mac_icon->w() > 0) {
+        win->icon(mac_icon); 
     }
 #endif
 

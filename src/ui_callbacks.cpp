@@ -36,6 +36,29 @@
 #include <algorithm>
 #include <cctype>
 
+#ifndef _WIN32
+#include <mach-o/dyld.h> // Core fix: macOS navigation required
+#include <limits.h>
+#include <string>
+
+// macOS only: dynamically compute absolute path inside Resources
+std::string get_mac_asset_path(const std::string& relative_asset) {
+    char path[PATH_MAX];
+    uint32_t size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size) == 0) {
+        std::string exe_path(path);
+        size_t last_slash = exe_path.find_last_of("/");
+        if (last_slash != std::string::npos) {
+            // remove executable name to get .../Kitana_Cryptool.app/Contents/MacOS
+            std::string base_dir = exe_path.substr(0, last_slash);
+            // align precisely to Resources: .../Contents/MacOS/../Resources/relative_asset
+            return base_dir + "/../Resources/" + relative_asset;
+        }
+    }
+    return relative_asset; // fallback
+}
+#endif
+
 // Static temporary string for OpenSSH public key to be copied to clipboard
 static std::string s_last_ssh_pubkey;
 
@@ -115,11 +138,11 @@ void showLicenseDialog(const char* title, const char* filePath) {
     view->textfont(FL_COURIER); // Use monospace font for better readability
     view->textsize(12);
 
-    // If it's plain text, wrap it in <pre> tags to preserve formatting
+    // 4. If it's plain text, wrap it in <pre> tags to preserve formatting
     const std::string html_wrapper = "<html><body><pre>" + fileContent + "</pre></body></html>";
     view->value(html_wrapper.c_str());
 
-    // 4. Bottom close button
+    // 5. Bottom close button
     auto* btn_close = new Fl_Button(275, 350, 100, 30, "Close");
     btn_close->labelfont(FL_FREE_FONT);
     btn_close->callback([](Fl_Widget* w, void* win_ptr) {
@@ -130,7 +153,7 @@ void showLicenseDialog(const char* title, const char* filePath) {
 
     lic_win->end();
 
-    // Center the window
+    // 6. Center the window
     lic_win->position((Fl::w() - lic_win->w()) / 2, (Fl::h() - lic_win->h()) / 2);
     lic_win->show();
 }
@@ -161,7 +184,7 @@ void MenuBarCallback(Fl_Widget* w, void* data) {
         dialog->set_modal();
         dialog->begin();
 
-        // 2. HTML 內容 (不變)
+        // 2. HTML content
         char aboutHtml[2048];
         snprintf(aboutHtml, sizeof(aboutHtml),
             R"(<html><body><font face='Microsoft JhengHei, Segoe UI' size='3'>)"
@@ -188,12 +211,13 @@ void MenuBarCallback(Fl_Widget* w, void* data) {
         iconBox->box(FL_FLAT_BOX);
         iconBox->color(dialog->color());
 
-    #ifdef _WIN32
-        // 4. Fix image display: Ensure FLTK image system is registered
         fl_register_images();
 
         static Fl_Image* app_icon = nullptr;
+
         if (!app_icon) {
+        #ifdef _WIN32
+            // Windows platform: use Win32 resource loading for embedded image
             HMODULE hMod = GetModuleHandle(nullptr);
             // Ensure resource.rc defines 101 RCDATA "app.png"
             HRSRC hRes = FindResource(hMod, MAKEINTRESOURCE(101), RT_RCDATA);
@@ -204,32 +228,43 @@ void MenuBarCallback(Fl_Widget* w, void* data) {
                     const DWORD size = SizeofResource(hMod, hRes);
 
                     if (pngData && size > 0) {
-                        // Use Fl_PNG_Image memory constructor
-                        // Passing nullptr as first param reads from the provided buffer
                         app_icon = new Fl_PNG_Image(nullptr, pngData, static_cast<int>(size));
-
-                        // Check if decoding succeeded
-                        if (app_icon->w() == 0) {
-                            delete app_icon;
-                            app_icon = nullptr;
-                        } else {
-                            Fl_Image* temp = app_icon->copy(64, 64);
-                            delete app_icon;
-                            app_icon = temp;
-                        }
                     }
+                }
+            }
+        #else
+            // macOS: use asset path lookup to load the image
+            std::string final_png_path = get_mac_asset_path("app.png");
+            app_icon = new Fl_PNG_Image(final_png_path.c_str());
+
+            // Fallback safety in case running the standalone binary from terminal
+            if (!app_icon || app_icon->w() == 0) {
+                if (app_icon) delete app_icon;
+                app_icon = new Fl_PNG_Image("app.png");
+            }
+        #endif
+            // Cross-platform safe handling and scaling routine
+            if (app_icon) {
+                if (app_icon->w() == 0) { // decoding failed (width is 0)
+                    delete app_icon;
+                    app_icon = nullptr;
+                } else {
+                    // crop/scale the loaded source image to fit the panel's 64x64 size precisely
+                    Fl_Image* temp = app_icon->copy(64, 64);
+                    delete app_icon;
+                    app_icon = temp;
                 }
             }
         }
 
+        // Final icon render mount
         if (app_icon) {
             iconBox->image(app_icon);
         } else {
             iconBox->label("Load Fail");
         }
-    #endif
 
-        // 5. Button layout fix: Move Y-axis to 280 to clear the image bottom (264)
+        // 4. Button layout fix: Move Y-axis to 280 to clear the image bottom (264)
         constexpr int btn_w = 120;
         constexpr int btn_h = 28;
         constexpr int btn_y = 280;
@@ -244,17 +279,36 @@ void MenuBarCallback(Fl_Widget* w, void* data) {
         licenseLGPLButton->labelfont(FL_FREE_FONT);
         licenseApacheButton->labelfont(FL_FREE_FONT);
 
-        // 4. [Core Wiring]: Callbacks for license buttons
+        // 5. Core Wiring: callbacks for license buttons (macOS absolute path handling)
         licenseMITButton->callback([](Fl_Widget*, void*) {
+        #ifdef _WIN32
+            // Windows retains relative path because the .exe working directory is adjacent.
             showLicenseDialog("MIT License", "licenses/mit.txt");
+        #else
+            // macOS: compute absolute path to Resources/licenses/mit.txt.
+            std::string abs_path = get_mac_asset_path("licenses/mit.txt");
+            showLicenseDialog("MIT License", abs_path.c_str());
+        #endif
         });
 
         licenseLGPLButton->callback([](Fl_Widget*, void*) {
+        #ifdef _WIN32
             showLicenseDialog("LGPL License", "licenses/lgpl-3.0.txt");
+        #else
+            // macOS: compute absolute path to Resources/licenses/lgpl-3.0.txt.
+            std::string abs_path = get_mac_asset_path("licenses/lgpl-3.0.txt");
+            showLicenseDialog("LGPL License", abs_path.c_str());
+        #endif
         });
-
+        
         licenseApacheButton->callback([](Fl_Widget*, void*) {
+        #ifdef _WIN32
             showLicenseDialog("Apache License", "licenses/apache-2.0.txt");
+        #else
+            // macOS: compute absolute path to Resources/licenses/apache-2.0.txt.
+            std::string abs_path = get_mac_asset_path("licenses/apache-2.0.txt");
+            showLicenseDialog("Apache License", abs_path.c_str());
+        #endif
         });
 
         auto* btn_ok = new Fl_Button(180, 330, 100, 30, "OK");

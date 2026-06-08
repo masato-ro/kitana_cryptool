@@ -1,15 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
 
-# 🎯 【CMake 現代化策略】：解決 FetchContent 的時間戳警告 (CMP0135)
+# CMake modernization: address FetchContent timestamp warning (CMP0135)
 cmake_policy(SET CMP0135 NEW)
 
-project(Kitana_Cryptool CXX)
+project(Kitana_Cryptool VERSION 0.1 LANGUAGES C CXX)
+find_package(Threads REQUIRED)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # =================================================================
-# 1. FLTK 現代拉取（FetchContent 純靜態配置）
+# 1. FLTK modern FetchContent (static-only configuration)
 # =================================================================
 include(FetchContent)
 FetchContent_Declare(
@@ -23,7 +24,7 @@ set(FLTK_BUILD_SHARED_LIBS OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(fltk)
 
 # =================================================================
-# 2. 建立執行檔與目錄配線
+# 2. Create executable and configure directories
 # =================================================================
 add_executable(${PROJECT_NAME}
         src/main.cpp
@@ -34,67 +35,102 @@ add_executable(${PROJECT_NAME}
         src/hashutil.cpp
 )
 
-# 註冊全域標頭檔搜尋生命線
+# Register global include directory
 target_include_directories(${PROJECT_NAME} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # =================================================================
-# 3. 熔接生命線：咬住 FLTK 核心與影像擴充組件
-# =================================================================
-# 🎯 升級點：必須同時連結 fltk 與 fltk::images，否則編譯器找不到 Fl_Help_View！
-target_link_libraries(${PROJECT_NAME} PRIVATE
-        fltk::fltk
-        fltk::images
-)
-
-# =================================================================
-# 4. 跨平台編譯與連結防禦晶片
+# 3. Cross-platform build and link configuration
 # =================================================================
 if(WIN32)
-    # --- Windows 平台 (MSVC & MinGW) ---
+    # --- Windows platform (MSVC & MinGW) ---
     target_include_directories(${PROJECT_NAME} PRIVATE "C:/OpenSSL-MSVC/include")
+    
+    # --- Windows link libraries ---
     target_link_libraries(${PROJECT_NAME} PRIVATE
+            fltk::images # moved to Windows-specific linking
             "C:/OpenSSL-MSVC/lib/libcrypto.lib"
             "C:/OpenSSL-MSVC/lib/libssl.lib"
             ws2_32 wsock32 crypt32 gdi32 comctl32 ole32 uuid shell32 gdiplus
     )
     if(MSVC)
-        # MSVC 特有設定
+        # MSVC-specific settings
         target_sources(${PROJECT_NAME} PRIVATE src/resource.rc)
-        # WIN32_EXECUTABLE 會自動處理 /SUBSYSTEM:WINDOWS，我們只需要補上 /ENTRY
+        # WIN32_EXECUTABLE handles /SUBSYSTEM:WINDOWS; just add /ENTRY
         set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
         target_link_options(${PROJECT_NAME} PRIVATE "/ENTRY:mainCRTStartup")
         target_compile_options(${PROJECT_NAME} PRIVATE "/utf-8")
     elseif(MINGW)
-        # MinGW 特有設定
+        # MinGW-specific settings
         target_link_options(${PROJECT_NAME} PRIVATE "-mwindows")
     endif()
 
-    # Windows 平台下，自動部署 DLL
-    message(STATUS "⚙️ [Kitana Post-Build] Windows 平台：啟動 OpenSSL DLL 自動佈署流水線...")
+    # Deploy OpenSSL DLLs on Windows
+    message(STATUS "[Kitana Post-Build] Windows platform: starting OpenSSL DLL deployment...")
     set(OPENSSL_DLL_SRC_CRYPTO "C:/OpenSSL-MSVC/bin/libcrypto-3-x64.dll")
     set(OPENSSL_DLL_SRC_SSL    "C:/OpenSSL-MSVC/bin/libssl-3-x64.dll")
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${OPENSSL_DLL_SRC_CRYPTO} $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${OPENSSL_DLL_SRC_SSL} $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+            
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/licenses" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/licenses")
 
 else()
-    # --- Linux & other Unix-like 平台 ---
-    # 在 Linux 上，我們期望 OpenSSL 是透過系統套件管理器安裝的
+    # --- Mac & Linux (Unix-like) platform ---
     find_package(OpenSSL REQUIRED)
-    target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+    
+    if(APPLE)
+        # 1. Enable the Mac official App bundle shell (App Bundle)
+        set_target_properties(${PROJECT_NAME} PROPERTIES 
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/src/Info.plist"
+            MACOSX_BUNDLE_ICON_FILE "app.icns"
+            OUTPUT_NAME "Kitana_Cryptool"
+        )
+        
+        target_link_libraries(${PROJECT_NAME} PRIVATE fltk::images OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+
+        # Register app.icns as a Mac bundle resource
+        target_sources(${PROJECT_NAME} PRIVATE src/app.icns)
+        set_source_files_properties(src/app.icns PROPERTIES MACOSX_BUNDLE_RESOURCES TRUE)
+
+        # 2. 【Complete packaging matrix】: add the final step of "fully automated local re-signing"
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/licenses" "${CMAKE_CURRENT_BINARY_DIR}/Kitana_Cryptool.app/Contents/Resources/licenses"
+                COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/app.png" "${CMAKE_CURRENT_BINARY_DIR}/Kitana_Cryptool.app/Contents/Resources/app.png"
+                
+                # Agent chip A: fetch, deploy, and fix OpenSSL dynamic library paths
+                COMMAND ${CMAKE_COMMAND} -E env 
+                ${CMAKE_COMMAND} -DAPP_PATH="${CMAKE_CURRENT_BINARY_DIR}/Kitana_Cryptool.app"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/MacDeploy.cmake"
+                
+                # 【Core reinstall protection】: call the Mac built-in codesign to force overwrite re-sign the entire .app internals, fully preventing crashes!
+                COMMAND codesign --force --deep --sign - "${CMAKE_CURRENT_BINARY_DIR}/Kitana_Cryptool.app"
+        )
+        
+    else()
+        # Linux platform remains unchanged
+        target_link_libraries(${PROJECT_NAME} PRIVATE fltk::images OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+        set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "Kitana_Cryptool")
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/licenses" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/licenses"
+                COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/app.png" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/app.png")
+    endif()
 endif()
 
-
 # =================================================================
-# 🧪 6. 自動化單元測試流水線 (整合 GoogleTest)
+# 4. Automated unit test pipeline (GoogleTest integration)
 # =================================================================
 enable_testing()
 FetchContent_Declare(
@@ -117,7 +153,7 @@ target_include_directories(Kitana_Tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# 為測試目標設定跨平台連結
+# Cross-platform linking for the test target
 if(WIN32)
     target_include_directories(Kitana_Tests PRIVATE "C:/OpenSSL-MSVC/include")
     target_link_libraries(Kitana_Tests PRIVATE GTest::gtest_main
@@ -135,7 +171,12 @@ if(WIN32)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "C:/OpenSSL-MSVC/bin/libssl-3-x64.dll" $<TARGET_FILE_DIR:Kitana_Tests>)
 else()
-    target_link_libraries(Kitana_Tests PRIVATE GTest::gtest_main OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+    target_link_libraries(Kitana_Tests PRIVATE 
+        GTest::gtest_main 
+        OpenSSL::SSL 
+        OpenSSL::Crypto 
+        Threads::Threads
+)
 endif()
 
 include(GoogleTest)

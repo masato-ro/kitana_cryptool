@@ -673,6 +673,248 @@ pub fn setup_hash_callbacks(
     });
 }
 
+pub fn setup_rsacrypt_callbacks(
+    mut mode_choice: fltk::menu::Choice,
+    btn_browse_key: &mut fltk::button::Button,
+    input_key: fltk::input::Input,
+    input_data: fltk::input::Input,
+    btn_execute: &mut fltk::button::Button,
+    result_input: fltk::input::Input,
+    btn_copy: &mut fltk::button::Button,
+    btn_clear: &mut fltk::button::Button,
+    text_buffer: fltk::text::TextBuffer,
+) {
+    mode_choice.set_callback({
+        let mut ik = input_key.clone();
+        let mut id = input_data.clone();
+        let mut ri = result_input.clone();
+        let mut tb = text_buffer.clone();
+        move |c| {
+            ik.set_value("");
+            id.set_value("");
+            ri.set_value("");
+            ri.set_label(""); // 在重新指派前，先清空原本的 Label
+            match c.value() {
+                0 => {
+                    tb.append("Switched to RSA Encryption Mode. Please select a Public Key.\n");
+                    ri.set_readonly(true);
+                    ri.set_label("Result (Base64):");
+                    ri.set_color(fltk::enums::Color::from_rgb(245, 245, 245));
+                },
+                1 => {
+                    tb.append("Switched to RSA Decryption Mode. Please select a Private Key.\n");
+                    ri.set_readonly(true);
+                    ri.set_label("Result (Text):");
+                    ri.set_color(fltk::enums::Color::from_rgb(245, 245, 245));
+                },
+                2 => {
+                    tb.append("Switched to RSA Sign Mode. Please select a Private Key.\n");
+                    ri.set_readonly(true);
+                    ri.set_label("Sign (Base64):");
+                    ri.set_color(fltk::enums::Color::from_rgb(245, 245, 245));
+                },
+                3 => {
+                    tb.append("Switched to RSA Verify Mode. Select Public Key & paste signature below.\n");
+                    ri.set_readonly(false); // 驗證模式下，結果框變成讓使用者貼上要驗證的簽章
+                    ri.set_label("Verify Sig (B64):");
+                    ri.set_color(fltk::enums::Color::from_rgb(255, 255, 255));
+                },
+                _ => {}
+            }
+            // 讓包含該 Input 的父容器進行重繪，徹底消除標籤長度改變時可能產生的文字殘影
+            if let Some(mut parent) = ri.parent() {
+                parent.redraw();
+            }
+        }
+    });
+
+    btn_browse_key.set_callback({
+        let mut ik = input_key.clone();
+        let mode = mode_choice.clone();
+        move |_| {
+            let mut dialog = dialog::NativeFileChooser::new(dialog::NativeFileChooserType::BrowseFile);
+            let mode_val = mode.value();
+            if mode_val == 0 || mode_val == 3 {
+                dialog.set_title("Select RSA Public Key (*.pem, *.pub)");
+            } else {
+                dialog.set_title("Select RSA Private Key (*.pem)");
+            }
+            dialog.set_filter("PEM Files\t*.{pem,pub}\nAll Files\t*.*");
+            dialog.show();
+            let path_str = dialog.filename().to_string_lossy().to_string();
+            if !path_str.is_empty() {
+                ik.set_value(&path_str);
+            }
+        }
+    });
+
+    btn_execute.set_callback({
+        let mode = mode_choice.clone();
+        let ik = input_key.clone();
+        let id = input_data.clone();
+        let mut ri = result_input.clone();
+        let tb = text_buffer.clone();
+        let mut btn_ex = btn_execute.clone();
+
+        move |_| {
+            let key_path = ik.value();
+            let data = id.value();
+            let mode_val = mode.value();
+            let sig_val = ri.value(); // Verify 模式下此欄位為使用者貼上的簽章
+
+            if key_path.is_empty() || data.is_empty() {
+                dialog::alert_default("Please provide both a key file and data to process.");
+                return;
+            }
+
+            if mode_val == 3 && sig_val.is_empty() {
+                dialog::alert_default("Please provide the signature (Base64) to verify in the result field.");
+                return;
+            }
+
+            btn_ex.deactivate();
+            if mode_val != 3 {
+                ri.set_value("");
+            }
+            
+            let mut tb_clone = tb.clone();
+            let mut ri_clone = ri.clone();
+            let mut btn_ex_clone = btn_ex.clone();
+            
+            std::thread::spawn(move || {
+                let result_msg: Result<Option<String>, String> = match mode_val {
+                    0 => { // Encrypt
+                        app::awake_callback({ let mut t = tb_clone.clone(); move || t.append("Encrypting data...\n") });
+                        match crate::modules::rsacrypt::RSACrypt::load_public_key(&key_path) {
+                            Ok(pub_key) => {
+                                let data_bytes = data.as_bytes();
+                                if data_bytes.len() > 190 {
+                                    Err("Data is too long! RSA 2048 with OAEP+SHA256 supports max ~190 bytes.".to_string())
+                                } else {
+                                    match crate::modules::rsacrypt::RSACrypt::encrypt(&pub_key, data_bytes) {
+                                        Ok(enc_bytes) => {
+                                            use base64::{engine::general_purpose, Engine as _};
+                                            Ok(Some(general_purpose::STANDARD.encode(&enc_bytes)))
+                                        },
+                                        Err(e) => Err(e),
+                                    }
+                                }
+                            },
+                            Err(e) => Err(e),
+                        }
+                    },
+                    1 => { // Decrypt
+                        app::awake_callback({ let mut t = tb_clone.clone(); move || t.append("Decrypting data...\n") });
+                        match crate::modules::rsacrypt::RSACrypt::load_private_key(&key_path) {
+                            Ok(priv_key) => {
+                                use base64::{engine::general_purpose, Engine as _};
+                                match general_purpose::STANDARD.decode(&data) {
+                                    Ok(dec_bytes) => {
+                                        match crate::modules::rsacrypt::RSACrypt::decrypt(&priv_key, &dec_bytes) {
+                                            Ok(plain_bytes) => {
+                                                match String::from_utf8(plain_bytes) {
+                                                    Ok(s) => Ok(Some(s)),
+                                                    Err(_) => Err("Decrypted data is not a valid UTF-8 string.".to_string()),
+                                                }
+                                            },
+                                            Err(e) => Err(e),
+                                        }
+                                    },
+                                    Err(e) => Err(format!("Base64 decoding failed: {}", e)),
+                                }
+                            },
+                            Err(e) => Err(e),
+                        }
+                    },
+                    2 => { // Sign
+                        app::awake_callback({ let mut t = tb_clone.clone(); move || t.append("Signing data...\n") });
+                        match crate::modules::rsacrypt::RSACrypt::load_private_key(&key_path) {
+                            Ok(priv_key) => {
+                                let data_bytes = data.as_bytes();
+                                match crate::modules::rsacrypt::RSACrypt::sign(&priv_key, data_bytes) {
+                                    Ok(sig_bytes) => {
+                                        use base64::{engine::general_purpose, Engine as _};
+                                        Ok(Some(general_purpose::STANDARD.encode(&sig_bytes)))
+                                    },
+                                    Err(e) => Err(e),
+                                }
+                            },
+                            Err(e) => Err(e),
+                        }
+                    },
+                    3 => { // Verify
+                        let sig_b64 = sig_val.clone();
+                        app::awake_callback({ let mut t = tb_clone.clone(); move || t.append("Verifying signature...\n") });
+                        match crate::modules::rsacrypt::RSACrypt::load_public_key(&key_path) {
+                            Ok(pub_key) => {
+                                use base64::{engine::general_purpose, Engine as _};
+                                match general_purpose::STANDARD.decode(&sig_b64) {
+                                    Ok(sig_bytes) => {
+                                        let data_bytes = data.as_bytes();
+                                        match crate::modules::rsacrypt::RSACrypt::verify(&pub_key, data_bytes, &sig_bytes) {
+                                            Ok(_) => Ok(None),
+                                            Err(e) => Err(e),
+                                        }
+                                    },
+                                    Err(e) => Err(format!("Signature Base64 decoding failed: {}", e)),
+                                }
+                            },
+                            Err(e) => Err(e),
+                        }
+                    },
+                    _ => Err("Unknown mode selected.".to_string()),
+                };
+
+                app::awake_callback(move || {
+                    match &result_msg {
+                        Ok(Some(res_str)) => {
+                            tb_clone.append("[Success] Operation completed successfully!\n");
+                            ri_clone.set_value(res_str);
+                        },
+                        Ok(None) => {
+                            tb_clone.append("[Success] Signature Verification Passed! The data is authentic.\n");
+                            dialog::message_default("Signature Valid!\nThe message is authentic and has not been tampered with.");
+                        },
+                        Err(err_msg) => {
+                            tb_clone.append(&format!("[Error] {}\n", err_msg));
+                            dialog::alert_default(&format!("Operation failed:\n{}", err_msg));
+                        }
+                    }
+                    btn_ex_clone.activate();
+                });
+            });
+        }
+    });
+
+    btn_copy.set_callback({
+        let ri = result_input.clone();
+        let mut tb = text_buffer.clone();
+        move |_| {
+            let val = ri.value();
+            if !val.is_empty() {
+                app::copy(&val);
+                tb.append("Result copied to clipboard.\n");
+                dialog::message_default("[Success] Copied to clipboard!");
+            } else {
+                dialog::alert_default("[Error] No result to copy!");
+            }
+        }
+    });
+
+    btn_clear.set_callback({
+        let mut ik = input_key.clone();
+        let mut id = input_data.clone();
+        let mut ri = result_input.clone();
+        let mut tb = text_buffer.clone();
+        move |_| {
+            ik.set_value("");
+            id.set_value("");
+            ri.set_value("");
+            tb.set_text("RSA Crypt matrix reset. System ready.\n");
+        }
+    });
+}
+
 fn show_license_dialog(title: &str, content: &str) {
     let mut win = fltk::window::Window::default()
         .with_size(600, 400)
@@ -695,6 +937,31 @@ fn show_license_dialog(title: &str, content: &str) {
     win.show();
 }
 
+pub fn show_readme_dialog() {
+    let mut win = fltk::window::Window::default()
+        .with_size(700, 500)
+        .with_label("README - Kitana Cryptool");
+    win.make_modal(true);
+    
+    let mut disp = fltk::text::TextDisplay::default().with_size(680, 430).with_pos(10, 10);
+    let mut buf = fltk::text::TextBuffer::default();
+    
+    buf.set_text(include_str!("../../README.md"));
+    disp.set_buffer(buf);
+    disp.set_text_font(fltk::enums::Font::Courier); // 使用等寬字型讓 Markdown 排版更整齊
+    disp.set_text_size(14);
+    disp.wrap_mode(fltk::text::WrapMode::AtBounds, 0); // 啟用自動換行，讓文字在視窗邊界自動折行
+
+    let mut btn_ok = fltk::button::Button::default().with_pos(300, 450).with_size(100, 30).with_label("Close");
+    btn_ok.set_callback({ let mut w = win.clone(); move |_| w.hide() });
+
+    win.end();
+    
+    let (sw, sh) = app::screen_size();
+    win.set_pos(((sw as i32) - win.w()) / 2, ((sh as i32) - win.h()) / 2);
+    win.show();
+}
+
 pub fn show_about_dialog() {
     let mut dialog = fltk::window::Window::default()
         .with_size(460, 450)
@@ -707,7 +974,7 @@ pub fn show_about_dialog() {
         This project is developed using Rust and FLTK.<br>&nbsp;<br>\
         <b>Used libraries and licenses:</b><br>\
         fltk-rs: 1.5 (License: MIT / LGPL)<br>\
-        RustCrypto (aes, cbc, cipher, md-5, pbkdf2, rsa, sha1, sha2, sha3): (License: MIT / Apache 2.0)<br>\
+        RustCrypto (aes, cbc, cipher, md-5, pbkdf2, rsa, sha1, sha2, sha3, signature): (License: MIT / Apache 2.0)<br>\
         rand, getrandom: (License: MIT / Apache 2.0)<br>\
         base64: (License: MIT / Apache 2.0)<br>\
         winres: (License: MIT)<br>&nbsp;<br>\

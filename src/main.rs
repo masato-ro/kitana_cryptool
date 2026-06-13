@@ -21,18 +21,7 @@ fn main() {
     }
 
     // ===============================================================
-    // Menu Bar
-    // ===============================================================
-    let mut menu_bar = menu::SysMenuBar::default().with_size(620, 25);
-    menu_bar.add("&File/&Exit\t", enums::Shortcut::Alt | 'q', menu::MenuFlag::Normal, |_| app::quit());
-    menu_bar.add("&Mode/AES Encrypt\\/Decrypt\t", enums::Shortcut::Alt | '1', menu::MenuFlag::Normal, |_| {});
-    menu_bar.add("&Mode/KeyGen\t", enums::Shortcut::Alt | '2', menu::MenuFlag::Normal, |_| {});
-    menu_bar.add("&Mode/PasswdGen\t", enums::Shortcut::Alt | '3', menu::MenuFlag::Normal, |_| {});
-    menu_bar.add("&Mode/Hash Matrix\t", enums::Shortcut::Alt | '4', menu::MenuFlag::Normal, |_| {});
-    menu_bar.add("&Help/&About\t", enums::Shortcut::None, menu::MenuFlag::Normal, |_| crate::modules::ui_callbacks::show_about_dialog());
-
-    // ===============================================================
-    // TAB 1: AES Encrypt/Decrypt
+    // TAB 1: AES Crypt
     // ===============================================================
     let tabs = group::Tabs::default()
         .with_pos(10, 35)
@@ -41,7 +30,7 @@ fn main() {
     let aes_group = group::Group::default()
         .with_pos(10, 60)
         .with_size(600, 200)
-        .with_label("AES Encrypt/Decrypt");
+        .with_label("AES Crypt");
 
     let mut mode_choice = menu::Choice::default()
         .with_pos(120, 80)
@@ -91,7 +80,61 @@ fn main() {
     aes_group.end();
 
     // ===============================================================
-    // TAB 2: KeyGen
+    // TAB 2: RSA Crypt
+    // ===============================================================
+    let mut rsa_group = group::Group::default()
+        .with_pos(10, 60)
+        .with_size(600, 200)
+        .with_label("RSA Crypt");
+
+    let mut rsa_mode_choice = menu::Choice::default()
+        .with_pos(120, 80)
+        .with_size(470, 25)
+        .with_label("Mode:");
+    rsa_mode_choice.add_choice("Encrypt (Public Key)|Decrypt (Private Key)|Sign (Private Key)|Verify (Public Key)");
+    rsa_mode_choice.set_value(0);
+
+    let rsa_input_key = input::Input::default()
+        .with_pos(120, 115)
+        .with_size(380, 25)
+        .with_label("Key File:");
+    let mut btn_rsa_browse_key = button::Button::default()
+        .with_pos(510, 115)
+        .with_size(80, 25)
+        .with_label("Browse...");
+
+    let rsa_input_data = input::Input::default()
+        .with_pos(120, 150)
+        .with_size(470, 25)
+        .with_label("Input Data:");
+
+    let mut rsa_result_input = input::Input::default()
+        .with_pos(120, 185)
+        .with_size(470, 25)
+        .with_label("Result:");
+    rsa_result_input.set_color(enums::Color::from_rgb(245, 245, 245));
+    rsa_result_input.set_readonly(true);
+
+    let mut btn_rsa_execute = button::Button::default()
+        .with_pos(30, 220)
+        .with_size(100, 30)
+        .with_label("Execute");
+
+    let mut btn_rsa_copy = button::Button::default()
+        .with_pos(140, 220)
+        .with_size(100, 30)
+        .with_label("Copy Result");
+
+    let mut btn_rsa_clear = button::Button::default()
+        .with_pos(250, 220)
+        .with_size(100, 30)
+        .with_label("Clear");
+
+    rsa_group.end();
+    rsa_group.hide();
+
+    // ===============================================================
+    // TAB 3: KeyGen
     // ===============================================================
     let mut keygen_group = group::Group::default()
         .with_pos(10, 60)
@@ -127,6 +170,7 @@ fn main() {
         .with_pos(30, 185)
         .with_size(250, 25)
         .with_label("Generate OpenSSH Public Key.");
+    check_ssh.set_tooltip("Check this to additionally generate an OpenSSH format public key,\nwhich can be copied to your clipboard after generation.");
 
     let mut input_comment = input::Input::default()
         .with_pos(420, 185)
@@ -153,7 +197,7 @@ fn main() {
     keygen_group.hide();
 
     // ===============================================================
-    // TAB 3: PasswdGen
+    // TAB 4: PasswdGen
     // ===============================================================
     let mut passwdgen_group = group::Group::default()
         .with_pos(10, 60)
@@ -196,7 +240,7 @@ fn main() {
     passwdgen_group.hide();
 
     // ===============================================================
-    // TAB 4: Hash Matrix
+    // TAB 5: Hash Matrix
     // ===============================================================
     let mut hash_group = group::Group::default()
         .with_pos(10, 60)
@@ -247,30 +291,37 @@ fn main() {
     let mut menu_bar = menu::SysMenuBar::default().with_size(620, 25);
     menu_bar.add("&File/&Exit\t", enums::Shortcut::Alt | 'q', menu::MenuFlag::Normal, |_| app::quit());
 
-    menu_bar.add("&Mode/AES Encrypt\\/Decrypt\t", enums::Shortcut::Alt | '1', menu::MenuFlag::Normal, {
+    menu_bar.add("&Mode/AES Crypt\t", enums::Shortcut::Alt | '1', menu::MenuFlag::Normal, {
         let mut t = tabs.clone();
         let g = aes_group.clone();
         move |_| { let _ = t.set_value(&g); }
     });
 
-    menu_bar.add("&Mode/KeyGen\t", enums::Shortcut::Alt | '2', menu::MenuFlag::Normal, {
+    menu_bar.add("&Mode/RSA Crypt\t", enums::Shortcut::Alt | '2', menu::MenuFlag::Normal, {
+        let mut t = tabs.clone();
+        let g = rsa_group.clone();
+        move |_| { let _ = t.set_value(&g); }
+    });
+
+    menu_bar.add("&Mode/KeyGen\t", enums::Shortcut::Alt | '3', menu::MenuFlag::Normal, {
         let mut t = tabs.clone();
         let g = keygen_group.clone();
         move |_| { let _ = t.set_value(&g); }
     });
 
-    menu_bar.add("&Mode/PasswdGen\t", enums::Shortcut::Alt | '3', menu::MenuFlag::Normal, {
+    menu_bar.add("&Mode/PasswdGen\t", enums::Shortcut::Alt | '4', menu::MenuFlag::Normal, {
         let mut t = tabs.clone();
         let g = passwdgen_group.clone();
         move |_| { let _ = t.set_value(&g); }
     });
 
-    menu_bar.add("&Mode/Hash Matrix\t", enums::Shortcut::Alt | '4', menu::MenuFlag::Normal, {
+    menu_bar.add("&Mode/Hash Matrix\t", enums::Shortcut::Alt | '5', menu::MenuFlag::Normal, {
         let mut t = tabs.clone();
         let g = hash_group.clone();
         move |_| { let _ = t.set_value(&g); }
     });
 
+    menu_bar.add("&Help/&README\t", enums::Shortcut::None, menu::MenuFlag::Normal, |_| crate::modules::ui_callbacks::show_readme_dialog());
     menu_bar.add("&Help/&About\t", enums::Shortcut::None, menu::MenuFlag::Normal, |_| crate::modules::ui_callbacks::show_about_dialog());
 
     // 狀態顯示
@@ -356,6 +407,18 @@ fn main() {
         &mut btn_hash_clear,
         text_buffer.clone(),
         progress.clone(),
+    );
+
+    crate::modules::ui_callbacks::setup_rsacrypt_callbacks(
+        rsa_mode_choice.clone(),
+        &mut btn_rsa_browse_key,
+        rsa_input_key.clone(),
+        rsa_input_data.clone(),
+        &mut btn_rsa_execute,
+        rsa_result_input.clone(),
+        &mut btn_rsa_copy,
+        &mut btn_rsa_clear,
+        text_buffer.clone(),
     );
 
     app.run().unwrap();

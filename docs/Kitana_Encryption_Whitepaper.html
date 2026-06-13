@@ -1,0 +1,304 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+    @page {
+        size: A4;
+        margin: 20mm 15mm;
+        background-color: #ffffff;
+        @bottom-right {
+            content: counter(page);
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 9pt;
+            color: #888888;
+        }
+        @bottom-left {
+            content: "Kitana Cryptool - 技術白皮書";
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 9pt;
+            color: #888888;
+        }
+    }
+    
+    *, *::before, *::after {
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: 'PingFang TC', 'Heiti TC', 'Microsoft JhengHei', sans-serif;
+        color: #2c3e50;
+        line-height: 1.6;
+        margin: 0;
+        padding: 20mm 15mm;
+        font-size: 10.5pt;
+    }
+
+    @media print {
+        body {
+            padding: 0;
+        }
+    }
+
+    /* 封面 / 標頭 banner */
+    .header-banner {
+        background-color: #1a252f;
+        color: #ffffff;
+        margin: -20mm -15mm 30px -15mm;
+        padding: 40px 15mm;
+        border-bottom: 5px solid #3498db;
+    }
+
+    .header-banner h1 {
+        margin: 0 0 10px 0;
+        font-size: 24pt;
+        font-weight: 700;
+        letter-spacing: 1px;
+    }
+
+    .header-banner .subtitle {
+        font-size: 13pt;
+        color: #bdc3c7;
+        margin: 0;
+    }
+
+    .metadata {
+        margin-top: 15px;
+        font-size: 9.5pt;
+        color: #95a5a6;
+    }
+
+    h2 {
+        font-size: 15pt;
+        color: #2c3e50;
+        border-left: 5px solid #3498db;
+        padding-left: 10px;
+        margin-top: 30px;
+        margin-bottom: 15px;
+        page-break-after: avoid;
+    }
+
+    h3 {
+        font-size: 12pt;
+        color: #34495e;
+        margin-top: 20px;
+        margin-bottom: 10px;
+        page-break-after: avoid;
+    }
+
+    p {
+        margin-top: 0;
+        margin-bottom: 15px;
+        text-align: justify;
+    }
+
+    ul, ol {
+        margin-top: 0;
+        margin-bottom: 15px;
+        padding-left: 20px;
+    }
+
+    li {
+        margin-bottom: 5px;
+    }
+
+    /* 數學公式樣式 */
+    .math {
+        font-family: 'Times New Roman', Times, serif;
+        font-style: italic;
+        font-weight: bold;
+        color: #c0392b;
+    }
+
+    .math-display {
+        text-align: center;
+        margin: 1.5em 0;
+        font-size: 11.5pt;
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        border: 1px solid #eaeded;
+    }
+
+    /* 表格樣式 */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+        font-size: 10pt;
+    }
+
+    th, td {
+        border: 1px solid #dcdde1;
+        padding: 10px 12px;
+        text-align: left;
+    }
+
+    th {
+        background-color: #f2f4f4;
+        color: #2c3e50;
+        font-weight: bold;
+    }
+
+    tr:nth-child(even) {
+        background-color: #fdfefe;
+    }
+
+    /* 提示區塊 */
+    .callout {
+        background-color: #ebf5fb;
+        border-left: 4px solid #5dade2;
+        padding: 12px 15px;
+        margin: 20px 0;
+        border-radius: 0 4px 4px 0;
+        page-break-inside: avoid;
+    }
+
+    .callout-title {
+        font-weight: bold;
+        color: #2e86c1;
+        margin-bottom: 5px;
+    }
+</style>
+</head>
+<body>
+
+<div class="header-banner">
+    <h1>Kitana 加密演算法規格白皮書</h1>
+    <div class="subtitle">基於 Rust 密碼學架構的動態流式防禦系統與跨平台相容實作</div>
+    <div class="metadata">專案：Kitana Cryptool Core &bull; 版本：v1.0 &bull; 安全層級：高 (AES-256-CBC)</div>
+</div>
+
+<h2>1. 概述</h2>
+<p>本白皮書旨在規範與說明 <strong>Kitana Cryptool</strong> 所採用的核心加密架構與二進位檔案結構（以下簡稱「Kitana 式加密法」）。本系統採用純 Rust 密碼學組件（Pure Rust Crypto）建構，捨棄了對系統底層動態連結庫（如 OpenSSL）的依賴，以確保在 Windows、Linux 與 macOS 等不同作業系統平台上，皆具備 100% 一致的金鑰衍生結果與加解密行為。</p>
+<p>Kitana 式加密法專為大檔案處理設計，採用嚴格的「流式處理（Streaming）」控制與「安全水庫累積機制」，在極低的記憶體腳印下，提供具備進度回調（Progress Callback）與動態取消（Cancel Flag）的高安全級防禦實作。</p>
+
+<h2>2. 密碼學核心參數</h2>
+<p>Kitana 式加密法嚴格遵循現代工業標準密碼學演算法，其核心配置參數如下表所示：</p>
+
+<table>
+    <thead>
+        <tr>
+            <th>參數名稱</th>
+            <th>規格與演算法</th>
+            <th>長度 / 疊代次數</th>
+            <th>安全用途</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>對稱加密演算法</strong></td>
+            <td>AES-256-CBC 模式</td>
+            <td>—</td>
+            <td>高強度區塊資料加密</td>
+        </tr>
+        <tr>
+            <td><strong>金鑰衍生函數 (KDF)</strong></td>
+            <td>PBKDF2-HMAC-SHA256</td>
+            <td>100,000 次疊代</td>
+            <td>防止字典攻擊與密碼暴力破解</td>
+        </tr>
+        <tr>
+            <td><strong>隨機鹽值 (Salt)</strong></td>
+            <td>密碼 secure 隨機數生成</td>
+            <td>16 位元組 (128 bits)</td>
+            <td>預防彩虹表攻擊，使同密碼產生不同密文</td>
+        </tr>
+        <tr>
+            <td><strong>主金鑰 (Key)</strong></td>
+            <td>AES-256 Key</td>
+            <td>32 位元組 (256 bits)</td>
+            <td>AES 晶片核心加密金鑰</td>
+        </tr>
+        <tr>
+            <td><strong>初始化向量 (IV)</strong></td>
+            <td>CBC 鏈結模式向量</td>
+            <td>16 位元組 (128 bits)</td>
+            <td>確保相同的明文區塊加密後產生不同密文</td>
+        </tr>
+        <tr>
+            <td><strong>資料填充模式</strong></td>
+            <td>PKCS#7 Padding</td>
+            <td>對齊 16 位元組區塊</td>
+            <td>處理非 16 位元組倍數的檔案末尾資料</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2>3. 檔案二進位結構 (Binary Layout)</h2>
+<p>經由 Kitana 加密法產生的密文檔案，具備結構高度緊湊、無冗餘標頭的特點。其磁碟二進位布局如下：</p>
+
+<div class="math-display">
+    <span class="math">File_{Encrypted} = Salt_{16\_bytes} \ || \ Ciphertext_{N\_bytes}</span>
+</div>
+
+<ul>
+    <li><strong>Salt (前 16 位元組)</strong>：每個加密檔案獨一無二的隨機鹽值。解密時必須首先讀取此 16 位元組以啟動金鑰衍生。</li>
+    <li><strong>Ciphertext (後續所有資料)</strong>：經由 AES-256-CBC 加密後的密文主體，其總長度必然為 16 位元組的整數倍（在標準狀況下）。</li>
+</ul>
+
+<h2>4. 加密流程與核心演算法</h2>
+<h3>4.1 金鑰衍生階段</h3>
+<p>系統接收使用者輸入的明文密碼 <span class="math">P</span>。首先生成 16 位元組的隨機數 <span class="math">S</span>。利用 PBKDF2 演算法衍生出長度為 48 位元組的混合緩衝區，並切割為 Key 與 IV：</p>
+
+<div class="math-display">
+    <span class="math">Key\_IV_{48\_bytes} = PBKDF2(P, S, c=100000, dkLen=48)</span><br>
+    <span class="math">Key = Key\_IV_{0..32}, \quad IV = Key\_IV_{32..48}</span>
+</div>
+
+<h3>4.2 流式加密循環 (4096 輸送帶)</h3>
+<p>為了兼顧記憶體效能，加密採用串流動態傳送機制：
+<ol>
+    <li>配置大小為 <span class="math">4096</span> 位元組的固定緩衝區（輸送帶）。</li>
+    <li>每次迴圈自輸入流讀取最多 <span class="math">4096</span> 位元組資料。</li>
+    <li><strong>中途檢查</strong>：若檢測到取消旗標（Cancel Flag），立刻中斷並回傳操作取消。</li>
+    <li><strong>區塊加密</strong>：若讀滿 <span class="math">4096</span> 位元組，直接以 16 位元組為單位執行原地（In-place）區塊加密並寫出。</li>
+    <li><strong>進度回調</strong>：更新已處理位元組數，換算百分比觸發進度調度器。</li>
+</ol>
+</p>
+
+<h3>4.3 邊界與 Padding 處理</h3>
+<p>當檔案讀取至末端，剩餘資料長度 <span class="math">L_{last} < 4096</span> 時，啟動 PKCS#7 填充：
+<ul>
+    <li>計算需填充的位元組數：<span class="math">Padding = 16 - (L_{last} \pmod{16})</span>。</li>
+    <li>在資料尾端補上數量為 <span class="math">Padding</span>、數值亦為 <span class="math">Padding</span> 的位元組。</li>
+    <li>通過加密器寫出最後的完整區塊。若原始檔案剛好對齊，則追加一個包含 16 位元組 <span class="math">0x10</span> 的獨立 Padding 區塊。</li>
+</ul>
+</p>
+
+<h2>5. 解密流程與超級相容機制 (水庫防線)</h2>
+<p>由於歷史上其他語言（如部分 C++ 舊實作版）在文件尾端寫入時，可能因底層 I/O 迴圈邊界判定錯誤而多寫入 1~15 位元組的非對齊垃圾碎屑，Kitana 解密法特別設計了<strong>「累積水庫與動態裁剪機制」</strong>，具備極高的容錯能力。</p>
+
+<h3>5.1 累積水庫 (Ciphertext Accumulator)</h3>
+<p>解密流讀取密文時，並不直接對單一區塊進行解填充，而是將資料流注入一個動態向量水庫。
+<div class="callout">
+    <div class="callout-title">水庫防線核心邏輯</div>
+    水庫內永遠扣留最後至少 16 位元組的資料不急於解密，防止誤將仍含有 Padding 的最後一個區塊當作普通資料區塊解密寫出。
+</div>
+</p>
+
+<h3>5.2 尾部垃圾動態裁剪 (Truncate 機制)</h3>
+<p>當密文流完全讀取完畢，跳出主迴圈後，水庫中留下了檔案最末端的關鍵區塊。此時 Kitana 啟動防禦檢查：</p>
+<ol>
+    <li>計算當前水庫剩餘密文總長度 <span class="math">Len_{rem}</span>。</li>
+    <li>計算非對齊餘數：<span class="math">Remainder = Len_{rem} \pmod{16}</span>。</li>
+    <li><strong>強行裁剪</strong>：若 <span class="math">Remainder > 0</span>，判定此餘數為舊版環境多寫入的非標準垃圾碎屑，程式自動執行：
+        <div class="math-display">
+            <span class="math">Valid\_Len = Len_{rem} - Remainder</span><br>
+            <span class="math">ciphertext\_accumulator.truncate(Valid\_Len)</span>
+        </div>
+        直接將不滿 16 位元組的無效尾巴削去。
+    </li>
+    <li>對裁剪後 100% 對齊的標準密文塊執行反向 PKCS#7 解填充（Unpadding），安全還原明文。</li>
+</ol>
+
+<h2>6. 安全性與設計評估</h2>
+<ul>
+    <li><strong>無狀態穩定性</strong>：由於不依賴作業系統 OpenSSL 機制，此 Rust 核心實作的金鑰衍生與置換表不受底層 OS 更新影響，具有永久的可還原性。</li>
+    <li><strong>抗密碼分析能力</strong>：100,000 次疊代的 PBKDF2 大幅提高了攻擊者的時間成本，能有效防禦基於 GPU 的現代化撞庫與彩虹表離線攻擊。</li>
+    <li><strong>高可用性設計</strong>：雙向進度條控制與防爆記憶體流設計，使 Kitana 加密法在面對數十 GB 等級的極端大檔案時，依然能保持作業系統 UI 的流暢回應與記憶體低消耗。</li>
+</ul>
+
+</body>
+</html>

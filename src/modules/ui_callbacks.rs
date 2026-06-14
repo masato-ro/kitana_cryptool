@@ -1115,6 +1115,17 @@ pub fn setup_rsacrypt_callbacks(
     });
 }
 
+fn center_window(win: &mut fltk::window::Window) {
+    if let Some(main_win) = app::first_window() {
+        let x = main_win.x() + (main_win.w() - win.w()) / 2;
+        let y = main_win.y() + (main_win.h() - win.h()) / 2;
+        win.set_pos(x, y);
+    } else {
+        let (sw, sh) = app::screen_size();
+        win.set_pos(((sw as i32) - win.w()) / 2, ((sh as i32) - win.h()) / 2);
+    }
+}
+
 fn show_license_dialog(title: &str, content: &str) {
     let mut win = fltk::window::Window::default()
         .with_size(600, 400)
@@ -1132,9 +1143,7 @@ fn show_license_dialog(title: &str, content: &str) {
     btn_ok.set_callback({ let mut w = win.clone(); move |_| w.hide() });
 
     win.end();
-    
-    let (sw, sh) = app::screen_size();
-    win.set_pos(((sw as i32) - win.w()) / 2, ((sh as i32) - win.h()) / 2);
+    center_window(&mut win);
     win.show();
 }
 
@@ -1165,9 +1174,7 @@ pub fn show_readme_dialog() {
     btn_ok.set_callback({ let mut w = win.clone(); move |_| w.hide() });
 
     win.end();
-    
-    let (sw, sh) = app::screen_size();
-    win.set_pos(((sw as i32) - win.w()) / 2, ((sh as i32) - win.h()) / 2);
+    center_window(&mut win);
     win.show();
 }
 
@@ -1222,7 +1229,6 @@ pub fn show_about_dialog() {
     btn_ok.set_callback({ let mut d = dialog.clone(); move |_| d.hide() });
 
     dialog.end();
-    let (sw, sh) = app::screen_size();
-    dialog.set_pos(((sw as i32) - dialog.w()) / 2, ((sh as i32) - dialog.h()) / 2);
+    center_window(&mut dialog);
     dialog.show();
 }

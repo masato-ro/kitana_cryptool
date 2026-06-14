@@ -1128,7 +1128,15 @@ pub fn show_readme_dialog() {
     let mut disp = fltk::text::TextDisplay::default().with_size(680, 430).with_pos(10, 10);
     let mut buf = fltk::text::TextBuffer::default();
     
-    buf.set_text(include_str!("../../README_zh.md"));
+    // 根據系統 locale 自動決定顯示中文或英文 README
+    let locale = sys_locale::get_locale().unwrap_or_else(|| "en".to_string());
+    let readme_content = if locale.to_lowercase().starts_with("zh") {
+        include_str!("../../README_zh.md")
+    } else {
+        include_str!("../../README.md")
+    };
+    
+    buf.set_text(readme_content);
     disp.set_buffer(buf);
     disp.set_text_font(fltk::enums::Font::Courier); // 使用等寬字型讓 Markdown 排版更整齊
     disp.set_text_size(14);

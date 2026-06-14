@@ -1,0 +1,98 @@
+name: Build and Release AppImage
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build AppImage for Linux
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install system dependencies for FLTK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxrender-dev \
+            libxfixes-dev \
+            libpango1.0-dev \
+            libcairo2-dev \
+            libpng-dev \
+            cmake
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Prepare AppDir structure
+        run: |
+          mkdir -p target/appimage/AppDir/usr/bin
+          mkdir -p target/appimage/AppDir/usr/share/applications
+          mkdir -p target/appimage/AppDir/usr/share/icons/hicolor/256x256/apps
+          
+          # Copy binary & assets
+          cp target/release/kitana_cryptool target/appimage/AppDir/usr/bin/
+          cp app.png target/appimage/AppDir/kitana_cryptool.png
+          cp app.png target/appimage/AppDir/usr/share/icons/hicolor/256x256/apps/kitana_cryptool.png
+
+      - name: Create Desktop Entry file
+        run: |
+          cat <<EOF > target/appimage/AppDir/kitana_cryptool.desktop
+          [Desktop Entry]
+          Type=Application
+          Name=Kitana Cryptool
+          Exec=kitana_cryptool
+          Icon=kitana_cryptool
+          Comment=A versatile cryptographic utility application built with Rust and FLTK
+          Categories=Utility;Security;
+          Terminal=false
+          EOF
+          cp target/appimage/AppDir/kitana_cryptool.desktop target/appimage/AppDir/usr/share/applications/
+
+      - name: Create AppRun bootstrap script
+        run: |
+          cat <<'EOF' > target/appimage/AppDir/AppRun
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          exec "${HERE}/usr/bin/kitana_cryptool" "$@"
+          EOF
+          chmod +x target/appimage/AppDir/AppRun
+
+      - name: Download and package AppImage
+        run: |
+          curl -Lo appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run target/appimage/AppDir Kitana_CryptoTool-x86_64.AppImage
+
+      - name: Upload AppImage to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Kitana_CryptoTool-x86_64.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

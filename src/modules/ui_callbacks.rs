@@ -1173,7 +1173,7 @@ pub fn show_readme_dialog() {
 
 pub fn show_about_dialog() {
     let mut dialog = fltk::window::Window::default()
-        .with_size(460, 450)
+        .with_size(460, 470)
         .with_label("About");
     dialog.make_modal(true);
 
@@ -1187,6 +1187,7 @@ pub fn show_about_dialog() {
         rand, getrandom: (License: MIT / Apache 2.0)<br>\
         base64: (License: MIT / Apache 2.0)<br>\
         sys-locale: (License: MIT / Apache 2.0)<br>\
+        webbrowser: (License: MIT / Apache 2.0)<br>\
         winres: (License: MIT)<br>&nbsp;<br>\
         This software itself is licensed under the <b>MIT License</b>.<br>\
         <i>See the LICENSE file in the project for detailed licensing terms.</i>\
@@ -1194,11 +1195,11 @@ pub fn show_about_dialog() {
         env!("CARGO_PKG_VERSION")
     );
 
-    let mut about_label = fltk::misc::HelpView::default().with_pos(20, 20).with_size(420, 250);
+    let mut about_label = fltk::misc::HelpView::default().with_pos(20, 20).with_size(420, 270);
     about_label.set_color(dialog.color());
     about_label.set_value(&about_html);
 
-    let mut icon_box = fltk::frame::Frame::default().with_pos(198, 270).with_size(64, 64);
+    let mut icon_box = fltk::frame::Frame::default().with_pos(198, 290).with_size(64, 64);
     icon_box.set_frame(fltk::enums::FrameType::FlatBox);
     icon_box.set_color(dialog.color());
 
@@ -1209,15 +1210,15 @@ pub fn show_about_dialog() {
         icon_box.set_label("Load Fail");
     }
 
-    let mut btn_mit = fltk::button::Button::default().with_pos(25, 350).with_size(120, 28).with_label("MIT License");
-    let mut btn_lgpl = fltk::button::Button::default().with_pos(170, 350).with_size(120, 28).with_label("LGPL License");
-    let mut btn_apache = fltk::button::Button::default().with_pos(315, 350).with_size(120, 28).with_label("Apache License");
+    let mut btn_mit = fltk::button::Button::default().with_pos(25, 370).with_size(120, 28).with_label("MIT License");
+    let mut btn_lgpl = fltk::button::Button::default().with_pos(170, 370).with_size(120, 28).with_label("LGPL License");
+    let mut btn_apache = fltk::button::Button::default().with_pos(315, 370).with_size(120, 28).with_label("Apache License");
 
     btn_mit.set_callback(|_| show_license_dialog("MIT License", include_str!("../../licenses/mit.txt")));
     btn_lgpl.set_callback(|_| show_license_dialog("LGPL License", include_str!("../../licenses/lgpl-3.0.txt")));
     btn_apache.set_callback(|_| show_license_dialog("Apache License", include_str!("../../licenses/apache-2.0.txt")));
 
-    let mut btn_ok = fltk::button::Button::default().with_pos(180, 400).with_size(100, 30).with_label("OK");
+    let mut btn_ok = fltk::button::Button::default().with_pos(180, 420).with_size(100, 30).with_label("OK");
     btn_ok.set_callback({ let mut d = dialog.clone(); move |_| d.hide() });
 
     dialog.end();

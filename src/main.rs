@@ -366,10 +366,10 @@ fn main() {
     });
 
     menu_bar.add("&Help/&README\t", enums::Shortcut::None, menu::MenuFlag::Normal, |_| crate::modules::ui_callbacks::show_readme_dialog());
-    menu_bar.add("&Help/&About\t", enums::Shortcut::None, menu::MenuFlag::Normal, |_| crate::modules::ui_callbacks::show_about_dialog());
     menu_bar.add("&Help/&Online Manual\t", enums::Shortcut::None, menu::MenuFlag::Normal, |_| {
         let _ = webbrowser::open("https://masato-ro.github.io/kitana_cryptool/");
     });
+    menu_bar.add("&Help/&About\t", enums::Shortcut::None, menu::MenuFlag::Normal, |_| crate::modules::ui_callbacks::show_about_dialog());
 
     // 狀態顯示
     let mut status_display = text::TextDisplay::default()

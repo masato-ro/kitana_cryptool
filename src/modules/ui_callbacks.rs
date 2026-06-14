@@ -9,10 +9,12 @@ pub fn setup_aes_callbacks(
     btn_clear: &mut fltk::button::Button,
     input_file: fltk::input::Input,
     output_file: fltk::input::Input,
-    password_input: fltk::input::SecretInput,
+    password_input_sec: fltk::input::SecretInput,
+    password_input_pln: fltk::input::Input,
     mode_choice: fltk::menu::Choice,
     text_buffer: fltk::text::TextBuffer,
     progress: fltk::misc::Progress,
+    global_is_running: Arc<AtomicBool>,
 ) {
     btn_browse_in.set_callback({
         let mut inp = input_file.clone();
@@ -54,30 +56,45 @@ pub fn setup_aes_callbacks(
         let mode = mode_choice.clone();
         let inp = input_file.clone();
         let outp = output_file.clone();
-        let pwd = password_input.clone();
+        let pwd_sec = password_input_sec.clone();
+        let pwd_pln = password_input_pln.clone();
         let mut buf = text_buffer.clone();
         let mut prog = progress.clone();
         let flag = cancel_flag.clone();
         let mut b_start = btn_start.clone();
         let mut b_stop = btn_stop.clone();
+        let global_run = global_is_running.clone();
         move |_| {
             let is_encrypt = mode.value() == 0;
             let inp_val = inp.value();
             let outp_val = outp.value();
-            let pwd_val = pwd.value();
+            let pwd_val = if pwd_sec.visible() { pwd_sec.value() } else { pwd_pln.value() };
 
-            if inp_val.is_empty() || outp_val.is_empty() || pwd_val.is_empty() {
+            let inp_trimmed = inp_val.trim().trim_matches('"').to_string();
+            let outp_trimmed = outp_val.trim().trim_matches('"').to_string();
+
+            if inp_trimmed.is_empty() || outp_trimmed.is_empty() || pwd_val.is_empty() {
                 dialog::alert_default("Please fill in all fields (Input, Output, Password).");
                 return;
             }
             
+            if std::path::Path::new(&inp_trimmed).is_dir() {
+                dialog::alert_default("Directory processing is not currently supported.\nPlease select a valid input file.");
+                return;
+            }
+            if std::path::Path::new(&outp_trimmed).is_dir() {
+                dialog::alert_default("The output path is a directory.\nPlease specify a valid output file name.");
+                return;
+            }
+
             let action = if is_encrypt { "Encrypting" } else { "Decrypting" };
-            buf.append(&format!("{} file: {}...\n", action, inp_val));
+            buf.append(&format!("{} file: {}...\n", action, inp_trimmed));
             
             prog.set_value(0.0);
             prog.set_label("0%");
 
             // 重設取消旗標並切換按鈕狀態
+            global_run.store(true, Ordering::Relaxed);
             flag.store(false, Ordering::Relaxed);
             b_start.deactivate();
             b_stop.activate();
@@ -87,6 +104,7 @@ pub fn setup_aes_callbacks(
             let flag_clone = flag.clone();
             let b_start_clone = b_start.clone();
             let b_stop_clone = b_stop.clone();
+            let global_run_clone = global_run.clone();
 
             std::thread::spawn(move || {
                 let callback = Box::new(move |p: u32| {
@@ -100,16 +118,18 @@ pub fn setup_aes_callbacks(
                 });
 
                 let res = if is_encrypt {
-                    crate::modules::aescrypt::AESCrypt::encrypt_file_with_progress(&inp_val, &outp_val, &pwd_val, Some(callback), Some(flag_clone))
+                    crate::modules::aescrypt::AESCrypt::encrypt_file_with_progress(&inp_trimmed, &outp_trimmed, &pwd_val, Some(callback), Some(flag_clone))
                 } else {
-                    crate::modules::aescrypt::AESCrypt::decrypt_file_with_progress(&inp_val, &outp_val, &pwd_val, Some(callback), Some(flag_clone))
+                    crate::modules::aescrypt::AESCrypt::decrypt_file_with_progress(&inp_trimmed, &outp_trimmed, &pwd_val, Some(callback), Some(flag_clone))
                 };
 
                 app::awake_callback({
                     let mut b = buf_clone.clone();
                     let mut start_btn = b_start_clone.clone();
                     let mut stop_btn = b_stop_clone.clone();
+                    let global_run_inner = global_run_clone.clone();
                     move || {
+                        global_run_inner.store(false, Ordering::Relaxed);
                         start_btn.activate();
                         stop_btn.deactivate();
 
@@ -126,11 +146,13 @@ pub fn setup_aes_callbacks(
     btn_clear.set_callback({
         let mut inp = input_file.clone();
         let mut outp = output_file.clone();
-        let mut pwd = password_input.clone();
+        let mut pwd_sec = password_input_sec.clone();
+        let mut pwd_pln = password_input_pln.clone();
         move |_| {
             inp.set_value("");
             outp.set_value("");
-            pwd.set_value("");
+            pwd_sec.set_value("");
+            pwd_pln.set_value("");
         }
     });
 }
@@ -148,6 +170,7 @@ pub fn setup_keygen_callbacks(
     input_comment: fltk::input::Input,
     text_buffer: fltk::text::TextBuffer,
     progress: fltk::misc::Progress,
+    global_is_running: Arc<AtomicBool>,
 ) {
     // 建立一個跨執行緒共享的狀態，用來儲存最後一次產生的 OpenSSH 公鑰字串
     let shared_ssh_key = Arc::new(Mutex::new(String::new()));
@@ -203,6 +226,7 @@ pub fn setup_keygen_callbacks(
         let mut tb = text_buffer.clone();
         let prog = progress.clone();
         let ssh_key_store = shared_ssh_key.clone();
+        let global_run = global_is_running.clone();
 
         move |_| {
             let priv_path = inp_priv.value();
@@ -210,11 +234,20 @@ pub fn setup_keygen_callbacks(
             let gen_ssh = chk_ssh.is_checked();
             let comment = inp_comment.value();
 
-            if priv_path.is_empty() || pub_path.is_empty() {
+            let priv_trimmed = priv_path.trim().trim_matches('"').to_string();
+            let pub_trimmed = pub_path.trim().trim_matches('"').to_string();
+
+            if priv_trimmed.is_empty() || pub_trimmed.is_empty() {
                 dialog::alert_default("Please specify output paths for both private and public keys!");
                 return;
             }
 
+            if std::path::Path::new(&priv_trimmed).is_dir() || std::path::Path::new(&pub_trimmed).is_dir() {
+                dialog::alert_default("The output path is a directory.\nPlease specify a valid file name.");
+                return;
+            }
+
+            global_run.store(true, Ordering::Relaxed);
             btn_gen.deactivate();
             tb.set_text(""); // 清空畫面
 
@@ -228,6 +261,7 @@ pub fn setup_keygen_callbacks(
             let prog_clone = prog.clone();
             let btn_gen_clone = btn_gen.clone();
             let ssh_store_clone = ssh_key_store.clone();
+            let global_run_clone = global_run.clone();
 
             // 開啟背景執行緒進行繁重的質數計算任務
             std::thread::spawn(move || {
@@ -242,12 +276,12 @@ pub fn setup_keygen_callbacks(
                 });
 
                 let mut report = String::new();
-                let success = match crate::modules::keygen::KeyGen::generate_rsa_key_pair(bits, &priv_path, &pub_path) {
+                let success = match crate::modules::keygen::KeyGen::generate_rsa_key_pair(bits, &priv_trimmed, &pub_trimmed) {
                     Ok(_) => {
-                        report.push_str(&format!("[Success] RSA Key Pair generated successfully!\nPrivate Key: {}\nPublic Key: {}\n", priv_path, pub_path));
+                        report.push_str(&format!("[Success] RSA Key Pair generated successfully!\nPrivate Key: {}\nPublic Key: {}\n", priv_trimmed, pub_trimmed));
                         
                         if gen_ssh {
-                            match crate::modules::keygen::KeyGen::load_private_key_from_file(&priv_path) {
+                            match crate::modules::keygen::KeyGen::load_private_key_from_file(&priv_trimmed) {
                                 Ok(pkey) => {
                                     let ssh_pub = crate::modules::keygen::KeyGen::generate_openssh_public_key(&pkey, &comment);
                                     if let Ok(mut store) = ssh_store_clone.lock() {
@@ -273,7 +307,9 @@ pub fn setup_keygen_callbacks(
                     let mut t = tb_clone;
                     let mut p = prog_clone;
                     let mut b = btn_gen_clone;
+                    let global_run_inner = global_run_clone;
                     move || {
+                        global_run_inner.store(false, Ordering::Relaxed);
                         t.append(&report);
                         if success {
                             p.set_value(100.0);
@@ -477,6 +513,7 @@ pub fn setup_hash_callbacks(
     btn_clear: &mut fltk::button::Button,
     text_buffer: fltk::text::TextBuffer,
     global_progress: fltk::misc::Progress,
+    global_is_running: Arc<AtomicBool>,
 ) {
     mode_choice.set_callback({
         let mut btn_browse = btn_browse.clone();
@@ -515,6 +552,7 @@ pub fn setup_hash_callbacks(
         let mut result_input = result_input.clone();
         let mut text_buffer = text_buffer.clone();
         let mut progress = global_progress.clone();
+        let global_run = global_is_running.clone();
 
         move |_| {
             progress.set_value(0.0);
@@ -525,9 +563,16 @@ pub fn setup_hash_callbacks(
             let mode = mode_choice.value();
             let alg_idx = alg_choice.value();
 
-            if input_data.is_empty() {
+            let input_trimmed = input_data.trim().trim_matches('"').to_string();
+
+            if input_trimmed.is_empty() {
                 text_buffer.set_text("[Error] Please enter text or select a file path!\n");
                 result_input.set_value("");
+                return;
+            }
+
+            if mode == 0 && std::path::Path::new(&input_trimmed).is_dir() {
+                dialog::alert_default("Directory hashing is not currently supported.\nPlease select a valid file.");
                 return;
             }
 
@@ -539,6 +584,7 @@ pub fn setup_hash_callbacks(
             };
             let alg_name = algorithm.to_string();
 
+            global_run.store(true, Ordering::Relaxed);
             btn_compute.deactivate();
             result_input.set_value("");
             text_buffer.set_text("");
@@ -547,6 +593,7 @@ pub fn setup_hash_callbacks(
             let mut prog_clone = progress.clone();
             let mut btn_comp_clone = btn_compute.clone();
             let mut res_inp_clone = result_input.clone();
+            let global_run_clone = global_run.clone();
 
             std::thread::spawn(move || {
                 app::awake_callback({
@@ -573,13 +620,13 @@ pub fn setup_hash_callbacks(
                             });
                         }
                     };
-                    crate::modules::hashutil::HashUtil::compute_hash_from_file(&input_data, algorithm, Some(callback))
+                    crate::modules::hashutil::HashUtil::compute_hash_from_file(&input_trimmed, algorithm, Some(callback))
                 } else {
                     app::awake_callback({
                         let mut t = tb_clone.clone();
                         move || t.append("Calculating hash from text...\n")
                     });
-                    let h = crate::modules::hashutil::HashUtil::compute_hash_from_text(&input_data, algorithm);
+                    let h = crate::modules::hashutil::HashUtil::compute_hash_from_text(&input_trimmed, algorithm);
                     app::awake_callback({
                         let mut p = prog_clone.clone();
                         move || {
@@ -590,7 +637,9 @@ pub fn setup_hash_callbacks(
                     h
                 };
 
+                let global_run_inner = global_run_clone.clone();
                 app::awake_callback(move || {
+                    global_run_inner.store(false, Ordering::Relaxed);
                     if !result_hash.is_empty() {
                         tb_clone.append(&format!("Hash calculation complete: {}\n", alg_name));
                         res_inp_clone.set_value(&result_hash);
@@ -677,12 +726,16 @@ pub fn setup_rsacrypt_callbacks(
     mut mode_choice: fltk::menu::Choice,
     btn_browse_key: &mut fltk::button::Button,
     input_key: fltk::input::Input,
-    input_data: fltk::input::Input,
+    btn_browse_data: &mut fltk::button::Button,
+    input_data: fltk::input::MultilineInput,
     btn_execute: &mut fltk::button::Button,
-    result_input: fltk::input::Input,
+    btn_stop: &mut fltk::button::Button,
+    result_input: fltk::input::MultilineInput,
     btn_copy: &mut fltk::button::Button,
     btn_clear: &mut fltk::button::Button,
     text_buffer: fltk::text::TextBuffer,
+    progress: fltk::misc::Progress,
+    global_is_running: Arc<AtomicBool>,
 ) {
     mode_choice.set_callback({
         let mut ik = input_key.clone();
@@ -693,35 +746,34 @@ pub fn setup_rsacrypt_callbacks(
             ik.set_value("");
             id.set_value("");
             ri.set_value("");
-            ri.set_label(""); // 在重新指派前，先清空原本的 Label
+            ri.set_label("");
             match c.value() {
                 0 => {
-                    tb.append("Switched to RSA Encryption Mode. Please select a Public Key.\n");
+                    tb.set_text("Switched to Hybrid Encryption (AES+RSA). Please select a Public Key.\nTip: You can input text or a valid file path!\n");
                     ri.set_readonly(true);
                     ri.set_label("Result (Base64):");
                     ri.set_color(fltk::enums::Color::from_rgb(245, 245, 245));
                 },
                 1 => {
-                    tb.append("Switched to RSA Decryption Mode. Please select a Private Key.\n");
+                    tb.set_text("Switched to Hybrid Decryption (AES+RSA). Please select a Private Key.\nTip: You can input Base64 or a valid file path!\n");
                     ri.set_readonly(true);
                     ri.set_label("Result (Text):");
                     ri.set_color(fltk::enums::Color::from_rgb(245, 245, 245));
                 },
                 2 => {
-                    tb.append("Switched to RSA Sign Mode. Please select a Private Key.\n");
+                    tb.set_text("Switched to RSA Sign Mode. Please select a Private Key.\nTip: You can input text or a valid file path!\n");
                     ri.set_readonly(true);
                     ri.set_label("Sign (Base64):");
                     ri.set_color(fltk::enums::Color::from_rgb(245, 245, 245));
                 },
                 3 => {
-                    tb.append("Switched to RSA Verify Mode. Select Public Key & paste signature below.\n");
-                    ri.set_readonly(false); // 驗證模式下，結果框變成讓使用者貼上要驗證的簽章
+                    tb.set_text("Switched to RSA Verify Mode. Select Public Key & paste signature below.\nTip: You can input text or a valid file path!\n");
+                    ri.set_readonly(false);
                     ri.set_label("Verify Sig (B64):");
                     ri.set_color(fltk::enums::Color::from_rgb(255, 255, 255));
                 },
                 _ => {}
             }
-            // 讓包含該 Input 的父容器進行重繪，徹底消除標籤長度改變時可能產生的文字殘影
             if let Some(mut parent) = ri.parent() {
                 parent.redraw();
             }
@@ -748,6 +800,29 @@ pub fn setup_rsacrypt_callbacks(
         }
     });
 
+    btn_browse_data.set_callback({
+        let mut id = input_data.clone();
+        move |_| {
+            let mut dialog = dialog::NativeFileChooser::new(dialog::NativeFileChooserType::BrowseFile);
+            dialog.set_title("Select Input File");
+            dialog.show();
+            let path_str = dialog.filename().to_string_lossy().to_string();
+            if !path_str.is_empty() {
+                id.set_value(&path_str);
+            }
+        }
+    });
+
+    btn_stop.deactivate();
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+
+    btn_stop.set_callback({
+        let flag = cancel_flag.clone();
+        move |_| {
+            flag.store(true, Ordering::Relaxed);
+        }
+    });
+
     btn_execute.set_callback({
         let mode = mode_choice.clone();
         let ik = input_key.clone();
@@ -755,12 +830,16 @@ pub fn setup_rsacrypt_callbacks(
         let mut ri = result_input.clone();
         let tb = text_buffer.clone();
         let mut btn_ex = btn_execute.clone();
+        let mut btn_stop_clone = btn_stop.clone();
+        let mut prog = progress.clone();
+        let global_run = global_is_running.clone();
+        let flag = cancel_flag.clone();
 
         move |_| {
             let key_path = ik.value();
             let data = id.value();
             let mode_val = mode.value();
-            let sig_val = ri.value(); // Verify 模式下此欄位為使用者貼上的簽章
+            let sig_val = ri.value();
 
             if key_path.is_empty() || data.is_empty() {
                 dialog::alert_default("Please provide both a key file and data to process.");
@@ -772,29 +851,73 @@ pub fn setup_rsacrypt_callbacks(
                 return;
             }
 
+            let data_trimmed_check = data.trim().trim_matches('"');
+            if std::path::Path::new(data_trimmed_check).is_dir() {
+                dialog::alert_default("Directory processing is not currently supported.\nPlease select a valid file or input text.");
+                return;
+            }
+
             btn_ex.deactivate();
+            btn_stop_clone.activate();
             if mode_val != 3 {
                 ri.set_value("");
             }
+
+            prog.set_value(0.0);
+            prog.set_label("0%");
+            prog.redraw();
+
+            global_run.store(true, Ordering::Relaxed);
+            flag.store(false, Ordering::Relaxed);
             
             let mut tb_clone = tb.clone();
             let mut ri_clone = ri.clone();
-            let mut btn_ex_clone = btn_ex.clone();
+            let btn_ex_clone = btn_ex.clone();
+            let btn_stop_clone2 = btn_stop_clone.clone();
+            let prog_clone = prog.clone();
+            let global_run_clone = global_run.clone();
+            let flag_clone = flag.clone();
             
+            enum RsaResult {
+                TextOutput(String),
+                FileSuccess(String),
+                VerifySuccess,
+            }
+
             std::thread::spawn(move || {
-                let result_msg: Result<Option<String>, String> = match mode_val {
-                    0 => { // Encrypt
-                        app::awake_callback({ let mut t = tb_clone.clone(); move || t.append("Encrypting data...\n") });
+                let data_trimmed = data.trim().trim_matches('"');
+                let is_file = std::path::Path::new(data_trimmed).is_file();
+
+                let progress_cb = {
+                    let p = prog_clone.clone();
+                    move |percent: u32| {
+                        app::awake_callback({
+                            let mut prg = p.clone();
+                            move || {
+                                prg.set_value(percent as f64);
+                                prg.set_label(&format!("{}%", percent));
+                            }
+                        });
+                    }
+                };
+
+                let result_msg: Result<RsaResult, String> = match mode_val {
+                    0 => {
                         match crate::modules::rsacrypt::RSACrypt::load_public_key(&key_path) {
                             Ok(pub_key) => {
-                                let data_bytes = data.as_bytes();
-                                if data_bytes.len() > 190 {
-                                    Err("Data is too long! RSA 2048 with OAEP+SHA256 supports max ~190 bytes.".to_string())
+                                if is_file {
+                                    let out_path = format!("{}.enc", data_trimmed);
+                                    app::awake_callback({ let mut t = tb_clone.clone(); let out = out_path.clone(); move || t.append(&format!("Hybrid Encrypting file to:\n{}\n", out)) });
+                                    match crate::modules::rsacrypt::RSACrypt::hybrid_encrypt_file(&pub_key, data_trimmed, &out_path, Some(Box::new(progress_cb)), Some(flag_clone)) {
+                                        Ok(_) => Ok(RsaResult::FileSuccess(format!("File successfully encrypted to:\n{}", out_path))),
+                                        Err(e) => Err(e),
+                                    }
                                 } else {
-                                    match crate::modules::rsacrypt::RSACrypt::encrypt(&pub_key, data_bytes) {
-                                        Ok(enc_bytes) => {
+                                    app::awake_callback({ let mut t = tb_clone.clone(); move || t.append("Hybrid Encrypting text (AES-256 + RSA)...\n") });
+                                    match crate::modules::rsacrypt::RSACrypt::hybrid_encrypt_bytes(&pub_key, data.as_bytes()) {
+                                        Ok(payload) => {
                                             use base64::{engine::general_purpose, Engine as _};
-                                            Ok(Some(general_purpose::STANDARD.encode(&enc_bytes)))
+                                            Ok(RsaResult::TextOutput(general_purpose::STANDARD.encode(&payload)))
                                         },
                                         Err(e) => Err(e),
                                     }
@@ -803,38 +926,60 @@ pub fn setup_rsacrypt_callbacks(
                             Err(e) => Err(e),
                         }
                     },
-                    1 => { // Decrypt
-                        app::awake_callback({ let mut t = tb_clone.clone(); move || t.append("Decrypting data...\n") });
+                    1 => {
                         match crate::modules::rsacrypt::RSACrypt::load_private_key(&key_path) {
                             Ok(priv_key) => {
-                                use base64::{engine::general_purpose, Engine as _};
-                                match general_purpose::STANDARD.decode(&data) {
-                                    Ok(dec_bytes) => {
-                                        match crate::modules::rsacrypt::RSACrypt::decrypt(&priv_key, &dec_bytes) {
-                                            Ok(plain_bytes) => {
-                                                match String::from_utf8(plain_bytes) {
-                                                    Ok(s) => Ok(Some(s)),
-                                                    Err(_) => Err("Decrypted data is not a valid UTF-8 string.".to_string()),
-                                                }
-                                            },
-                                            Err(e) => Err(e),
-                                        }
-                                    },
-                                    Err(e) => Err(format!("Base64 decoding failed: {}", e)),
+                                if is_file {
+                                    let out_path = if data_trimmed.ends_with(".enc") {
+                                        data_trimmed.strip_suffix(".enc").unwrap().to_string() + ".dec"
+                                    } else {
+                                        format!("{}.dec", data_trimmed)
+                                    };
+                                    app::awake_callback({ let mut t = tb_clone.clone(); let out = out_path.clone(); move || t.append(&format!("Hybrid Decrypting file to:\n{}\n", out)) });
+                                    match crate::modules::rsacrypt::RSACrypt::hybrid_decrypt_file(&priv_key, data_trimmed, &out_path, Some(Box::new(progress_cb)), Some(flag_clone)) {
+                                        Ok(_) => Ok(RsaResult::FileSuccess(format!("File successfully decrypted to:\n{}", out_path))),
+                                        Err(e) => Err(e),
+                                    }
+                                } else {
+                                    app::awake_callback({ let mut t = tb_clone.clone(); move || t.append("Hybrid Decrypting text (AES-256 + RSA)...\n") });
+                                    use base64::{engine::general_purpose, Engine as _};
+                                    match general_purpose::STANDARD.decode(&data) {
+                                        Ok(payload) => {
+                                            match crate::modules::rsacrypt::RSACrypt::hybrid_decrypt_bytes(&priv_key, &payload) {
+                                                Ok(plaintext) => {
+                                                    match String::from_utf8(plaintext) {
+                                                        Ok(s) => Ok(RsaResult::TextOutput(s)),
+                                                        Err(_) => Err("Decrypted data is not a valid UTF-8 string.".to_string()),
+                                                    }
+                                                },
+                                                Err(e) => Err(e),
+                                            }
+                                        },
+                                        Err(e) => Err(format!("Base64 decoding failed: {}", e)),
+                                    }
                                 }
                             },
                             Err(e) => Err(e),
                         }
                     },
-                    2 => { // Sign
+                    2 => {
                         app::awake_callback({ let mut t = tb_clone.clone(); move || t.append("Signing data...\n") });
                         match crate::modules::rsacrypt::RSACrypt::load_private_key(&key_path) {
                             Ok(priv_key) => {
-                                let data_bytes = data.as_bytes();
-                                match crate::modules::rsacrypt::RSACrypt::sign(&priv_key, data_bytes) {
-                                    Ok(sig_bytes) => {
-                                        use base64::{engine::general_purpose, Engine as _};
-                                        Ok(Some(general_purpose::STANDARD.encode(&sig_bytes)))
+                                let data_bytes = if is_file {
+                                    std::fs::read(data_trimmed).map_err(|e| format!("Read file failed: {}", e))
+                                } else {
+                                    Ok(data.as_bytes().to_vec())
+                                };
+                                match data_bytes {
+                                    Ok(bytes) => {
+                                        match crate::modules::rsacrypt::RSACrypt::sign(&priv_key, &bytes) {
+                                            Ok(sig_bytes) => {
+                                                use base64::{engine::general_purpose, Engine as _};
+                                                    Ok(RsaResult::TextOutput(general_purpose::STANDARD.encode(&sig_bytes)))
+                                            },
+                                            Err(e) => Err(e),
+                                        }
                                     },
                                     Err(e) => Err(e),
                                 }
@@ -842,7 +987,7 @@ pub fn setup_rsacrypt_callbacks(
                             Err(e) => Err(e),
                         }
                     },
-                    3 => { // Verify
+                    3 => {
                         let sig_b64 = sig_val.clone();
                         app::awake_callback({ let mut t = tb_clone.clone(); move || t.append("Verifying signature...\n") });
                         match crate::modules::rsacrypt::RSACrypt::load_public_key(&key_path) {
@@ -850,9 +995,18 @@ pub fn setup_rsacrypt_callbacks(
                                 use base64::{engine::general_purpose, Engine as _};
                                 match general_purpose::STANDARD.decode(&sig_b64) {
                                     Ok(sig_bytes) => {
-                                        let data_bytes = data.as_bytes();
-                                        match crate::modules::rsacrypt::RSACrypt::verify(&pub_key, data_bytes, &sig_bytes) {
-                                            Ok(_) => Ok(None),
+                                        let data_bytes = if is_file {
+                                            std::fs::read(data_trimmed).map_err(|e| format!("Read file failed: {}", e))
+                                        } else {
+                                            Ok(data.as_bytes().to_vec())
+                                        };
+                                        match data_bytes {
+                                            Ok(bytes) => {
+                                                match crate::modules::rsacrypt::RSACrypt::verify(&pub_key, &bytes, &sig_bytes) {
+                                                        Ok(_) => Ok(RsaResult::VerifySuccess),
+                                                    Err(e) => Err(e),
+                                                }
+                                            },
                                             Err(e) => Err(e),
                                         }
                                     },
@@ -865,22 +1019,46 @@ pub fn setup_rsacrypt_callbacks(
                     _ => Err("Unknown mode selected.".to_string()),
                 };
 
-                app::awake_callback(move || {
-                    match &result_msg {
-                        Ok(Some(res_str)) => {
-                            tb_clone.append("[Success] Operation completed successfully!\n");
-                            ri_clone.set_value(res_str);
-                        },
-                        Ok(None) => {
-                            tb_clone.append("[Success] Signature Verification Passed! The data is authentic.\n");
-                            dialog::message_default("Signature Valid!\nThe message is authentic and has not been tampered with.");
-                        },
-                        Err(err_msg) => {
-                            tb_clone.append(&format!("[Error] {}\n", err_msg));
-                            dialog::alert_default(&format!("Operation failed:\n{}", err_msg));
+                app::awake_callback({
+                    let mut prg = prog_clone;
+                    let global_run_inner = global_run_clone;
+                    let mut start_btn = btn_ex_clone;
+                    let mut stop_btn = btn_stop_clone2;
+                    move || {
+                        global_run_inner.store(false, Ordering::Relaxed);
+                        start_btn.activate();
+                        stop_btn.deactivate();
+
+                        match &result_msg {
+                            Ok(RsaResult::TextOutput(res_str)) => {
+                                tb_clone.append("[Success] Operation completed successfully!\n");
+                                ri_clone.set_value(res_str);
+                                prg.set_value(100.0);
+                                prg.set_label("100%");
+                            },
+                            Ok(RsaResult::FileSuccess(msg)) => {
+                                tb_clone.append(&format!("[Success] {}\n", msg));
+                                ri_clone.set_value("");
+                                dialog::message_default(&format!("Operation Successful:\n{}", msg));
+                                prg.set_value(100.0);
+                                prg.set_label("100%");
+                            },
+                            Ok(RsaResult::VerifySuccess) => {
+                                tb_clone.append("[Success] Signature Verification Passed! The data is authentic.\n");
+                                dialog::message_default("Signature Valid!\nThe message is authentic and has not been tampered with.");
+                                prg.set_value(100.0);
+                                prg.set_label("100%");
+                            },
+                            Err(err_msg) => {
+                                tb_clone.append(&format!("[Error] {}\n", err_msg));
+                                if err_msg != "Operation cancelled." {
+                                    dialog::alert_default(&format!("Operation failed:\n{}", err_msg));
+                                }
+                                prg.set_value(0.0);
+                                prg.set_label("0%");
+                            }
                         }
                     }
-                    btn_ex_clone.activate();
                 });
             });
         }
@@ -906,11 +1084,14 @@ pub fn setup_rsacrypt_callbacks(
         let mut id = input_data.clone();
         let mut ri = result_input.clone();
         let mut tb = text_buffer.clone();
+        let mut prog = progress.clone();
         move |_| {
             ik.set_value("");
             id.set_value("");
             ri.set_value("");
             tb.set_text("RSA Crypt matrix reset. System ready.\n");
+            prog.set_value(0.0);
+            prog.set_label("0%");
         }
     });
 }
@@ -926,6 +1107,7 @@ fn show_license_dialog(title: &str, content: &str) {
     
     buf.set_text(content);
     disp.set_buffer(buf);
+    disp.wrap_mode(fltk::text::WrapMode::AtBounds, 0);
 
     let mut btn_ok = fltk::button::Button::default().with_pos(250, 360).with_size(100, 30).with_label("OK");
     btn_ok.set_callback({ let mut w = win.clone(); move |_| w.hide() });

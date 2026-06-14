@@ -1,1 +1,29 @@
-/target
+# Build artifacts
+/target/
+
+# Backup files
+**/*.rs.bk
+
+# IDE and Editor configuration files
+.vscode/
+.idea/
+*.suo
+*.user
+*.userossc
+*.sln.docstates
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test / Output files generated during local runtime testing
+*.pem
+*.pub
+*.key
+*.enc
+*.dec
+*.bin
+*.hash
+*.sig

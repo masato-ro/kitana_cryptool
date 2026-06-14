@@ -8,6 +8,7 @@ use fltk::misc::Progress;
 fn main() {
     let app = app::App::default();
     app::set_scheme(app::Scheme::Base);
+    let is_running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     // 創建主窗口
     let mut wind = window::Window::default()
@@ -23,7 +24,7 @@ fn main() {
     // ===============================================================
     // TAB 1: AES Crypt
     // ===============================================================
-    let tabs = group::Tabs::default()
+    let mut tabs = group::Tabs::default()
         .with_pos(10, 35)
         .with_size(600, 225);
 
@@ -57,10 +58,38 @@ fn main() {
         .with_size(80, 25)
         .with_label("Browse...");
 
-    let password_input = input::SecretInput::default()
+    let password_input_sec = input::SecretInput::default()
         .with_pos(120, 185)
-        .with_size(470, 25)
+        .with_size(430, 25)
         .with_label("Password:");
+
+    let mut password_input_pln = input::Input::default()
+        .with_pos(120, 185)
+        .with_size(430, 25)
+        .with_label("Password:");
+    password_input_pln.hide(); // 預設隱藏明文輸入框
+
+    let mut btn_toggle_pwd = button::Button::default()
+        .with_pos(560, 185)
+        .with_size(30, 25)
+        .with_label("👁");
+    btn_toggle_pwd.set_tooltip("Toggle Password Visibility");
+
+    btn_toggle_pwd.set_callback({
+        let mut sec = password_input_sec.clone();
+        let mut pln = password_input_pln.clone();
+        move |_| {
+            if sec.visible() {
+                pln.set_value(&sec.value());
+                sec.hide();
+                pln.show();
+            } else {
+                sec.set_value(&pln.value());
+                pln.hide();
+                sec.show();
+            }
+        }
+    });
 
     let mut btn_start = button::Button::default()
         .with_pos(30, 220)
@@ -91,7 +120,7 @@ fn main() {
         .with_pos(120, 80)
         .with_size(470, 25)
         .with_label("Mode:");
-    rsa_mode_choice.add_choice("Encrypt (Public Key)|Decrypt (Private Key)|Sign (Private Key)|Verify (Public Key)");
+    rsa_mode_choice.add_choice("Hybrid Encrypt (AES+RSA)|Hybrid Decrypt (AES+RSA)|Sign (Private Key)|Verify (Public Key)");
     rsa_mode_choice.set_value(0);
 
     let rsa_input_key = input::Input::default()
@@ -103,30 +132,41 @@ fn main() {
         .with_size(80, 25)
         .with_label("Browse...");
 
-    let rsa_input_data = input::Input::default()
-        .with_pos(120, 150)
-        .with_size(470, 25)
-        .with_label("Input Data:");
+    let mut rsa_input_data = input::MultilineInput::default()
+        .with_pos(120, 145)
+        .with_size(380, 35)
+        .with_label("Text / File:");
+    rsa_input_data.set_tooltip("Tip: You can input plain text, Base64, or drag & drop a valid file path here!");
 
-    let mut rsa_result_input = input::Input::default()
+    let mut btn_rsa_browse_data = button::Button::default()
+        .with_pos(510, 145)
+        .with_size(80, 25)
+        .with_label("Browse...");
+
+    let mut rsa_result_input = input::MultilineInput::default()
         .with_pos(120, 185)
-        .with_size(470, 25)
+        .with_size(470, 35)
         .with_label("Result:");
     rsa_result_input.set_color(enums::Color::from_rgb(245, 245, 245));
     rsa_result_input.set_readonly(true);
 
     let mut btn_rsa_execute = button::Button::default()
-        .with_pos(30, 220)
+        .with_pos(30, 225)
         .with_size(100, 30)
         .with_label("Execute");
 
+    let mut btn_rsa_stop = button::Button::default()
+        .with_pos(140, 225)
+        .with_size(100, 30)
+        .with_label("Stop");
+
     let mut btn_rsa_copy = button::Button::default()
-        .with_pos(140, 220)
+        .with_pos(250, 225)
         .with_size(100, 30)
         .with_label("Copy Result");
 
     let mut btn_rsa_clear = button::Button::default()
-        .with_pos(250, 220)
+        .with_pos(360, 225)
         .with_size(100, 30)
         .with_label("Clear");
 
@@ -139,7 +179,7 @@ fn main() {
     let mut keygen_group = group::Group::default()
         .with_pos(10, 60)
         .with_size(600, 200)
-        .with_label("KeyGen");
+        .with_label("Key Generator");
 
     let mut choice_bits = menu::Choice::default()
         .with_pos(160, 80)
@@ -202,7 +242,7 @@ fn main() {
     let mut passwdgen_group = group::Group::default()
         .with_pos(10, 60)
         .with_size(600, 200)
-        .with_label("PasswdGen");
+        .with_label("Password Generator");
 
     let mut slider_len = valuator::ValueSlider::default()
         .with_pos(120, 80)
@@ -294,31 +334,31 @@ fn main() {
     menu_bar.add("&Mode/AES Crypt\t", enums::Shortcut::Alt | '1', menu::MenuFlag::Normal, {
         let mut t = tabs.clone();
         let g = aes_group.clone();
-        move |_| { let _ = t.set_value(&g); }
+        move |_| { let _ = t.set_value(&g); t.do_callback(); }
     });
 
     menu_bar.add("&Mode/RSA Crypt\t", enums::Shortcut::Alt | '2', menu::MenuFlag::Normal, {
         let mut t = tabs.clone();
         let g = rsa_group.clone();
-        move |_| { let _ = t.set_value(&g); }
+        move |_| { let _ = t.set_value(&g); t.do_callback(); }
     });
 
-    menu_bar.add("&Mode/KeyGen\t", enums::Shortcut::Alt | '3', menu::MenuFlag::Normal, {
+    menu_bar.add("&Mode/Key Generator\t", enums::Shortcut::Alt | '3', menu::MenuFlag::Normal, {
         let mut t = tabs.clone();
         let g = keygen_group.clone();
-        move |_| { let _ = t.set_value(&g); }
+        move |_| { let _ = t.set_value(&g); t.do_callback(); }
     });
 
-    menu_bar.add("&Mode/PasswdGen\t", enums::Shortcut::Alt | '4', menu::MenuFlag::Normal, {
+    menu_bar.add("&Mode/Password Generator\t", enums::Shortcut::Alt | '4', menu::MenuFlag::Normal, {
         let mut t = tabs.clone();
         let g = passwdgen_group.clone();
-        move |_| { let _ = t.set_value(&g); }
+        move |_| { let _ = t.set_value(&g); t.do_callback(); }
     });
 
     menu_bar.add("&Mode/Hash Matrix\t", enums::Shortcut::Alt | '5', menu::MenuFlag::Normal, {
         let mut t = tabs.clone();
         let g = hash_group.clone();
-        move |_| { let _ = t.set_value(&g); }
+        move |_| { let _ = t.set_value(&g); t.do_callback(); }
     });
 
     menu_bar.add("&Help/&README\t", enums::Shortcut::None, menu::MenuFlag::Normal, |_| crate::modules::ui_callbacks::show_readme_dialog());
@@ -334,6 +374,68 @@ fn main() {
     status_display.set_color(enums::Color::from_rgb(39, 40, 34));      // Monokai Background
     status_display.set_text_color(enums::Color::from_rgb(166, 226, 46)); // Monokai Green
     status_display.set_text_font(enums::Font::Courier);
+
+    let current_tab = std::sync::Arc::new(std::sync::Mutex::new(aes_group.clone()));
+
+    tabs.set_callback({
+        let mut tb = text_buffer.clone();
+        let aes_g = aes_group.clone();
+        let rsa_g = rsa_group.clone();
+        let key_g = keygen_group.clone();
+        let pwd_g = passwdgen_group.clone();
+        let hash_g = hash_group.clone();
+        let rsa_mode = rsa_mode_choice.clone();
+        let is_running_clone = is_running.clone();
+        let cur_tab = current_tab.clone();
+        move |t| {
+            if is_running_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                dialog::alert_default("An operation is currently running. Please wait or stop the operation before switching tabs.");
+                if let Ok(prev) = cur_tab.lock() {
+                    let mut tabs_widget = t.clone();
+                    let _ = tabs_widget.set_value(&*prev);
+                }
+                return;
+            }
+
+            if let Some(w) = t.value() {
+                let active = if w.is_same(&aes_g) {
+                    aes_g.clone()
+                } else if w.is_same(&rsa_g) {
+                    rsa_g.clone()
+                } else if w.is_same(&key_g) {
+                    key_g.clone()
+                } else if w.is_same(&pwd_g) {
+                    pwd_g.clone()
+                } else if w.is_same(&hash_g) {
+                    hash_g.clone()
+                } else {
+                    aes_g.clone()
+                };
+
+                if let Ok(mut prev) = cur_tab.lock() {
+                    *prev = active;
+                }
+
+                if w.is_same(&aes_g) {
+                    tb.set_text("Switched to AES Crypt. System ready.\n");
+                } else if w.is_same(&rsa_g) {
+                    match rsa_mode.value() {
+                        0 => tb.set_text("Switched to Hybrid Encryption (AES+RSA). Please select a Public Key.\nTip: You can input text or a valid file path!\n"),
+                        1 => tb.set_text("Switched to Hybrid Decryption (AES+RSA). Please select a Private Key.\nTip: You can input Base64 or a valid file path!\n"),
+                        2 => tb.set_text("Switched to RSA Sign Mode. Please select a Private Key.\nTip: You can input text or a valid file path!\n"),
+                        3 => tb.set_text("Switched to RSA Verify Mode. Select Public Key & paste signature below.\nTip: You can input text or a valid file path!\n"),
+                        _ => tb.set_text("Switched to RSA Crypt.\n"),
+                    }
+                } else if w.is_same(&key_g) {
+                    tb.set_text("Switched to Key Generator. System ready.\n");
+                } else if w.is_same(&pwd_g) {
+                    tb.set_text("Switched to Password Generator. System ready.\n");
+                } else if w.is_same(&hash_g) {
+                    tb.set_text("Switched to Hash Matrix. System ready.\n");
+                }
+            }
+        }
+    });
 
     // 進度條
     let mut progress = Progress::default()
@@ -359,10 +461,12 @@ fn main() {
         &mut btn_clear,
         input_file.clone(),
         output_file.clone(),
-        password_input.clone(),
+        password_input_sec.clone(),
+        password_input_pln.clone(),
         mode_choice.clone(),
         text_buffer.clone(),
         progress.clone(),
+        is_running.clone(),
     );
 
     crate::modules::ui_callbacks::setup_keygen_callbacks(
@@ -378,6 +482,7 @@ fn main() {
         input_comment.clone(),
         text_buffer.clone(),
         progress.clone(),
+        is_running.clone(),
     );
 
     crate::modules::ui_callbacks::setup_passwdgen_callbacks(
@@ -407,18 +512,23 @@ fn main() {
         &mut btn_hash_clear,
         text_buffer.clone(),
         progress.clone(),
+        is_running.clone(),
     );
 
     crate::modules::ui_callbacks::setup_rsacrypt_callbacks(
         rsa_mode_choice.clone(),
         &mut btn_rsa_browse_key,
         rsa_input_key.clone(),
+        &mut btn_rsa_browse_data,
         rsa_input_data.clone(),
         &mut btn_rsa_execute,
+        &mut btn_rsa_stop,
         rsa_result_input.clone(),
         &mut btn_rsa_copy,
         &mut btn_rsa_clear,
         text_buffer.clone(),
+        progress.clone(),
+        is_running.clone(),
     );
 
     app.run().unwrap();

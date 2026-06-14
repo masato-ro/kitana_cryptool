@@ -1128,7 +1128,7 @@ pub fn show_readme_dialog() {
     let mut disp = fltk::text::TextDisplay::default().with_size(680, 430).with_pos(10, 10);
     let mut buf = fltk::text::TextBuffer::default();
     
-    buf.set_text(include_str!("../../README.md"));
+    buf.set_text(include_str!("../../README_zh.md"));
     disp.set_buffer(buf);
     disp.set_text_font(fltk::enums::Font::Courier); // 使用等寬字型讓 Markdown 排版更整齊
     disp.set_text_size(14);

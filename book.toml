@@ -1,7 +1,6 @@
 [book]
 authors = ["masato"]
 language = "zh-tw"
-multilingual = false
 src = "book_src"
 title = "Kitana Cryptool - 使用手冊"
 

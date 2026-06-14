@@ -1,0 +1,13 @@
+[book]
+authors = ["masato"]
+language = "zh-tw"
+multilingual = false
+src = "book_src"
+title = "Kitana Cryptool - 使用手冊"
+
+[output.html]
+git-repository-url = "https://github.com/masato-ro/kitana_cryptool"
+git-repository-icon = "fa-github"
+default-theme = "navy"
+preferred-dark-theme = "navy"
+mathjax-support = true

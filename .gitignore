@@ -27,3 +27,6 @@ Thumbs.db
 *.bin
 *.hash
 *.sig
+
+# mdBook build directory
+/book/

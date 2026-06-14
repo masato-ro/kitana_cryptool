@@ -147,7 +147,9 @@ fn main() {
         .with_pos(120, 185)
         .with_size(470, 35)
         .with_label("Result:");
-    rsa_result_input.set_color(enums::Color::from_rgb(245, 245, 245));
+    rsa_result_input.set_color(enums::Color::from_rgb(39, 40, 34));      // Monokai Background
+    rsa_result_input.set_text_color(enums::Color::from_rgb(166, 226, 46)); // Monokai Green
+    rsa_result_input.set_text_font(enums::Font::Courier);
     rsa_result_input.set_readonly(true);
 
     let mut btn_rsa_execute = button::Button::default()
@@ -309,7 +311,9 @@ fn main() {
     let mut btn_hash_browse = button::Button::default().with_pos(510, 115).with_size(80, 25).with_label("Browse...");
 
     let mut hash_result_input = input::Input::default().with_pos(120, 150).with_size(380, 25).with_label("Hash Result:");
-    hash_result_input.set_color(enums::Color::from_rgb(245, 245, 245));
+    hash_result_input.set_color(enums::Color::from_rgb(39, 40, 34));      // Monokai Background
+    hash_result_input.set_text_color(enums::Color::from_rgb(166, 226, 46)); // Monokai Green
+    hash_result_input.set_text_font(enums::Font::Courier);
     hash_result_input.set_readonly(true);
 
     let mut btn_hash_compare = button::Button::default().with_pos(510, 150).with_size(80, 25).with_label("Compare...");

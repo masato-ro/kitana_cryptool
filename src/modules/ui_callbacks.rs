@@ -767,25 +767,29 @@ pub fn setup_rsacrypt_callbacks(
                     tb.set_text("Switched to Hybrid Encryption (AES+RSA). Please select a Public Key.\nTip: You can input text or a valid file path!\n");
                     ri.set_readonly(true);
                     ri.set_label("Result (Base64):");
-                    ri.set_color(fltk::enums::Color::from_rgb(245, 245, 245));
+                    ri.set_color(fltk::enums::Color::from_rgb(39, 40, 34));
+                    ri.set_text_color(fltk::enums::Color::from_rgb(166, 226, 46));
                 },
                 1 => {
                     tb.set_text("Switched to Hybrid Decryption (AES+RSA). Please select a Private Key.\nTip: You can input Base64 or a valid file path!\n");
                     ri.set_readonly(true);
                     ri.set_label("Result (Text):");
-                    ri.set_color(fltk::enums::Color::from_rgb(245, 245, 245));
+                    ri.set_color(fltk::enums::Color::from_rgb(39, 40, 34));
+                    ri.set_text_color(fltk::enums::Color::from_rgb(166, 226, 46));
                 },
                 2 => {
                     tb.set_text("Switched to RSA Sign Mode. Please select a Private Key.\nTip: You can input text or a valid file path!\n");
                     ri.set_readonly(true);
                     ri.set_label("Sign (Base64):");
-                    ri.set_color(fltk::enums::Color::from_rgb(245, 245, 245));
+                    ri.set_color(fltk::enums::Color::from_rgb(39, 40, 34));
+                    ri.set_text_color(fltk::enums::Color::from_rgb(166, 226, 46));
                 },
                 3 => {
                     tb.set_text("Switched to RSA Verify Mode. Select Public Key & paste signature below.\nTip: You can input text or a valid file path!\n");
                     ri.set_readonly(false);
                     ri.set_label("Verify Sig (B64):");
                     ri.set_color(fltk::enums::Color::from_rgb(255, 255, 255));
+                    ri.set_text_color(fltk::enums::Color::from_rgb(0, 0, 0));
                 },
                 _ => {}
             }

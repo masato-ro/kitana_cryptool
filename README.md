@@ -42,6 +42,7 @@ This project uses the following open-source libraries:
 *   fltk-rs (MIT/LGPL)
 *   RustCrypto (`aes`, `cbc`, `cipher`, `md-5`, `pbkdf2`, `rsa`, `sha1`, `sha2`, `sha3`, `signature`) (MIT/Apache 2.0)
 *   rand, `getrandom` & `base64` (MIT/Apache 2.0)
+*   sys-locale (MIT/Apache 2.0)
 *   winres (MIT)
 
 ## License

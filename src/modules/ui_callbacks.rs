@@ -1167,6 +1167,7 @@ pub fn show_about_dialog() {
         RustCrypto (aes, cbc, cipher, md-5, pbkdf2, rsa, sha1, sha2, sha3, signature): (License: MIT / Apache 2.0)<br>\
         rand, getrandom: (License: MIT / Apache 2.0)<br>\
         base64: (License: MIT / Apache 2.0)<br>\
+        sys-locale: (License: MIT / Apache 2.0)<br>\
         winres: (License: MIT)<br>&nbsp;<br>\
         This software itself is licensed under the <b>MIT License</b>.<br>\
         <i>See the LICENSE file in the project for detailed licensing terms.</i>\

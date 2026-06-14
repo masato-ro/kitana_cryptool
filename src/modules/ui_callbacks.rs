@@ -18,6 +18,8 @@ pub fn setup_aes_callbacks(
 ) {
     btn_browse_in.set_callback({
         let mut inp = input_file.clone();
+        let mut outp = output_file.clone();
+        let mode = mode_choice.clone();
         move |_| {
             let mut dialog = dialog::NativeFileChooser::new(dialog::NativeFileChooserType::BrowseFile);
             dialog.set_title("Select Input File");
@@ -25,6 +27,19 @@ pub fn setup_aes_callbacks(
             let path_str = dialog.filename().to_string_lossy().to_string();
             if !path_str.is_empty() {
                 inp.set_value(&path_str);
+                
+                // 自動推導並填寫輸出檔案路徑
+                if mode.value() == 0 {
+                    // Encrypt 模式：預設加上 .enc
+                    outp.set_value(&format!("{}.enc", path_str));
+                } else {
+                    // Decrypt 模式：如果檔名以 .enc 結尾，則去掉它；否則補上 .dec
+                    if path_str.to_lowercase().ends_with(".enc") {
+                        outp.set_value(&path_str[..path_str.len() - 4]);
+                    } else {
+                        outp.set_value(&format!("{}.dec", path_str));
+                    }
+                }
             }
         }
     });

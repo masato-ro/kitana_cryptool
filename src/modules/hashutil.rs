@@ -2,6 +2,7 @@
 
 use md5::Md5;
 use sha1::Sha1;
+use crc32fast::Hasher;
 use sha2::{Digest, Sha256};
 use sha3::Sha3_256;
 use std::fs::File;
@@ -10,6 +11,7 @@ use std::io::Read;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HashAlgorithm {
     MD5,
+    CRC32,
     SHA1,
     SHA256,
     SHA3_256,
@@ -19,6 +21,7 @@ impl HashAlgorithm {
     pub fn from_str(alg_str: &str) -> Self {
         match alg_str {
             "MD5" => HashAlgorithm::MD5,
+            "CRC32" | "CRC-32" => HashAlgorithm::CRC32,
             "SHA-1" => HashAlgorithm::SHA1,
             "SHA-256" => HashAlgorithm::SHA256,
             "SHA-3-256" => HashAlgorithm::SHA3_256,
@@ -29,6 +32,7 @@ impl HashAlgorithm {
     pub fn to_string(&self) -> String {
         match self {
             HashAlgorithm::MD5 => "MD5".to_string(),
+            HashAlgorithm::CRC32 => "CRC32".to_string(),
             HashAlgorithm::SHA1 => "SHA-1".to_string(),
             HashAlgorithm::SHA256 => "SHA-256".to_string(),
             HashAlgorithm::SHA3_256 => "SHA-3-256".to_string(),
@@ -57,6 +61,11 @@ impl HashUtil {
     pub fn compute_hash_from_text(text: &str, algorithm: HashAlgorithm) -> String {
         match algorithm {
             HashAlgorithm::MD5 => Self::bytes_to_hex_string(&Md5::digest(text)),
+            HashAlgorithm::CRC32 => {
+                let mut hasher = Hasher::new();
+                hasher.update(text.as_bytes());
+                format!("{:08x}", hasher.finalize())
+            }
             HashAlgorithm::SHA1 => Self::bytes_to_hex_string(&Sha1::digest(text)),
             HashAlgorithm::SHA256 => Self::bytes_to_hex_string(&Sha256::digest(text)),
             HashAlgorithm::SHA3_256 => Self::bytes_to_hex_string(&Sha3_256::digest(text)),
@@ -106,6 +115,46 @@ impl HashUtil {
         Self::bytes_to_hex_string(&hasher.finalize())
     }
 
+    fn process_file_crc32<F>(
+        mut file: File,
+        total_bytes: u64,
+        mut progress_callback: Option<F>,
+    ) -> String
+    where
+        F: FnMut(u32),
+    {
+        let mut hasher = Hasher::new();
+        let mut buffer = [0u8; 4096];
+        let mut processed_bytes = 0u64;
+        let mut last_percent = -1i32;
+
+        loop {
+            let count = match file.read(&mut buffer) {
+                Ok(c) if c > 0 => c,
+                _ => break,
+            };
+
+            hasher.update(&buffer[..count]);
+            processed_bytes += count as u64;
+
+            if let Some(ref mut cb) = progress_callback {
+                if total_bytes > 0 {
+                    let percent = ((processed_bytes as f64 / total_bytes as f64) * 100.0) as i32;
+                    if percent > last_percent {
+                        cb(percent.min(100) as u32);
+                        last_percent = percent;
+                    }
+                }
+            }
+        }
+
+        if let Some(ref mut cb) = progress_callback {
+            cb(100);
+        }
+
+        format!("{:08x}", hasher.finalize())
+    }
+
     /// ===================================================================
     /// 從檔案計算雜湊值，並支援進度條回調
     /// ===================================================================
@@ -126,6 +175,7 @@ impl HashUtil {
 
         match algorithm {
             HashAlgorithm::MD5 => Self::process_file_hash::<Md5, F>(file, total_bytes, progress_callback),
+            HashAlgorithm::CRC32 => Self::process_file_crc32::<F>(file, total_bytes, progress_callback),
             HashAlgorithm::SHA1 => Self::process_file_hash::<Sha1, F>(file, total_bytes, progress_callback),
             HashAlgorithm::SHA256 => Self::process_file_hash::<Sha256, F>(file, total_bytes, progress_callback),
             HashAlgorithm::SHA3_256 => Self::process_file_hash::<Sha3_256, F>(file, total_bytes, progress_callback),
@@ -177,7 +227,7 @@ impl HashUtil {
             let end_pos = trimmed.find(|c: char| c == ' ' || c == '\t' || c == '*').unwrap_or(trimmed.len());
             let hash_part = &trimmed[..end_pos];
             
-            if hash_part.len() == 32 || hash_part.len() == 40 || hash_part.len() == 64 {
+            if hash_part.len() == 8 || hash_part.len() == 32 || hash_part.len() == 40 || hash_part.len() == 64 {
                 let parsed = hash_part.to_lowercase();
                 
                 if valid_hash_count == 0 {
@@ -233,6 +283,10 @@ mod tests {
             HashUtil::compute_hash_from_text(text, HashAlgorithm::SHA3_256),
             "644bcc7e564373040999aac89e7622f3ca71fba1d972fd94a31c3bfbf24e3938"
         );
+        assert_eq!(
+            HashUtil::compute_hash_from_text(text, HashAlgorithm::CRC32),
+            "0d4a1185"
+        );
     }
 
     #[test]
@@ -247,6 +301,14 @@ mod tests {
         );
         
         assert_eq!(result, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
+
+        let result_crc = HashUtil::compute_hash_from_file(
+            file_path.to_str().unwrap(),
+            HashAlgorithm::CRC32,
+            None::<fn(u32)>,
+        );
+        assert_eq!(result_crc, "0d4a1185");
+
         let _ = fs::remove_file(&file_path);
     }
 

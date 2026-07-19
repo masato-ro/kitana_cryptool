@@ -15,6 +15,14 @@ fn main() {
         .with_size(620, 555)
         .with_label("Kitana CryptoTool - Crypto Engine Matrix");
 
+    wind.handle(|_, ev| {
+        if ev == enums::Event::KeyDown && app::event_key() == enums::Key::Escape {
+            true
+        } else {
+            false
+        }
+    });
+
     // 設置視窗標題列圖標
     if let Ok(mut icon) = image::PngImage::from_data(include_bytes!("../app.png")) {
         icon.scale(64, 64, true, true);
@@ -183,9 +191,16 @@ fn main() {
         .with_size(600, 200)
         .with_label("Key Generator");
 
+    let mut choice_key_type = menu::Choice::default()
+        .with_pos(100, 80)
+        .with_size(140, 25)
+        .with_label("Key Type");
+    choice_key_type.add_choice("RSA|Ed25519");
+    choice_key_type.set_value(0);
+
     let mut choice_bits = menu::Choice::default()
-        .with_pos(160, 80)
-        .with_size(430, 25)
+        .with_pos(450, 80)
+        .with_size(140, 25)
         .with_label("Key Length");
     choice_bits.add_choice("1024|2048|4096");
     choice_bits.set_value(1);
@@ -211,14 +226,21 @@ fn main() {
     let mut check_ssh = button::CheckButton::default()
         .with_pos(30, 185)
         .with_size(250, 25)
-        .with_label("Generate OpenSSH Public Key.");
-    check_ssh.set_tooltip("Check this to additionally generate an OpenSSH format public key,\nwhich can be copied to your clipboard after generation.");
+        .with_label("Also copy OpenSSH public key.");
+    check_ssh.set_tooltip("Check this to also copy the generated OpenSSH public key to your clipboard after generation.");
 
     let mut input_comment = input::Input::default()
         .with_pos(420, 185)
         .with_size(170, 25)
         .with_label("Comment:");
     input_comment.deactivate();
+
+    let mut choice_pub_format = menu::Choice::default()
+        .with_pos(440, 220)
+        .with_size(150, 25)
+        .with_label("Format");
+    choice_pub_format.add_choice("OpenSSH|PEM");
+    choice_pub_format.set_value(0);
 
     let mut btn_generate_key = button::Button::default()
         .with_pos(30, 220)
@@ -227,11 +249,11 @@ fn main() {
 
     let mut btn_copy_ssh = button::Button::default()
         .with_pos(150, 220)
-        .with_size(130, 30)
-        .with_label("Copy SSH Pub Key");
+        .with_size(115, 30)
+        .with_label("Copy SSH");
 
     let mut btn_keygen_clear = button::Button::default()
-        .with_pos(290, 220)
+        .with_pos(275, 220)
         .with_size(100, 30)
         .with_label("Clear");
 
@@ -300,8 +322,8 @@ fn main() {
         .with_pos(420, 80)
         .with_size(170, 25)
         .with_label("Algorithm:");
-    hash_alg_choice.add_choice("MD5|SHA-1|SHA-256|SHA-3-256");
-    hash_alg_choice.set_value(2);
+    hash_alg_choice.add_choice("MD5|CRC32|SHA-1|SHA-256|SHA-3-256");
+    hash_alg_choice.set_value(3);
 
     let hash_input_source = input::Input::default()
         .with_pos(120, 115)
@@ -483,10 +505,12 @@ fn main() {
         &mut btn_generate_key,
         &mut btn_copy_ssh,
         &mut btn_keygen_clear,
+        choice_key_type.clone(),
         choice_bits.clone(),
         input_priv.clone(),
         input_pub.clone(),
         input_comment.clone(),
+        choice_pub_format.clone(),
         text_buffer.clone(),
         progress.clone(),
         is_running.clone(),

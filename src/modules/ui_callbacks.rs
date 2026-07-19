@@ -179,10 +179,12 @@ pub fn setup_keygen_callbacks(
     btn_generate: &mut fltk::button::Button,
     btn_copy: &mut fltk::button::Button,
     btn_clear: &mut fltk::button::Button,
+    mut choice_key_type: fltk::menu::Choice,
     choice_bits: fltk::menu::Choice,
     input_priv: fltk::input::Input,
     input_pub: fltk::input::Input,
     input_comment: fltk::input::Input,
+    choice_pub_format: fltk::menu::Choice,
     text_buffer: fltk::text::TextBuffer,
     progress: fltk::misc::Progress,
     global_is_running: Arc<AtomicBool>,
@@ -192,11 +194,26 @@ pub fn setup_keygen_callbacks(
 
     btn_browse_priv.set_callback({
         let mut inp = input_priv.clone();
+        let key_type_choice = choice_key_type.clone();
         move |_| {
+            let is_ed25519 = key_type_choice.value() == 1;
+            let default_name = if is_ed25519 { "id_ed25519.pem" } else { "id_rsa.pem" };
+            let title = if is_ed25519 {
+                "Specify Ed25519 Private Key Storage Location"
+            } else {
+                "Specify RSA Private Key Storage Location"
+            };
+
+            let preset_path = if inp.value().trim().is_empty() {
+                default_name.to_string()
+            } else {
+                inp.value()
+            };
+
             let mut dialog = dialog::NativeFileChooser::new(dialog::NativeFileChooserType::BrowseSaveFile);
-            dialog.set_title("Specify RSA Private Key Storage Location");
+            dialog.set_title(title);
             dialog.set_filter("PEM Files\t*.pem\nAll Files\t*.*");
-            dialog.set_preset_file("id_rsa.pem");
+            dialog.set_preset_file(&preset_path);
             dialog.show();
             let path_str = dialog.filename().to_string_lossy().to_string();
             if !path_str.is_empty() {
@@ -207,11 +224,26 @@ pub fn setup_keygen_callbacks(
 
     btn_browse_pub.set_callback({
         let mut inp = input_pub.clone();
+        let key_type_choice = choice_key_type.clone();
         move |_| {
+            let is_ed25519 = key_type_choice.value() == 1;
+            let default_name = if is_ed25519 { "id_ed25519.pub" } else { "id_rsa.pub" };
+            let title = if is_ed25519 {
+                "Specify Ed25519 Public Key Storage Location"
+            } else {
+                "Specify RSA Public Key Storage Location"
+            };
+
+            let preset_path = if inp.value().trim().is_empty() {
+                default_name.to_string()
+            } else {
+                inp.value()
+            };
+
             let mut dialog = dialog::NativeFileChooser::new(dialog::NativeFileChooserType::BrowseSaveFile);
-            dialog.set_title("Specify RSA Public Key Storage Location");
+            dialog.set_title(title);
             dialog.set_filter("Public Key Files\t*.pub\nAll Files\t*.*");
-            dialog.set_preset_file("id_rsa.pub");
+            dialog.set_preset_file(&preset_path);
             dialog.show();
             let path_str = dialog.filename().to_string_lossy().to_string();
             if !path_str.is_empty() {
@@ -231,12 +263,47 @@ pub fn setup_keygen_callbacks(
         }
     });
 
+    choice_key_type.set_callback({
+        let mut bits_choice = choice_bits.clone();
+        let mut priv_input = input_priv.clone();
+        let mut pub_input = input_pub.clone();
+        move |c| {
+            let is_ed25519 = c.value() == 1;
+            if is_ed25519 {
+                bits_choice.deactivate();
+            } else {
+                bits_choice.activate();
+            }
+
+            let default_priv = if is_ed25519 { "id_ed25519.pem" } else { "id_rsa.pem" };
+            let default_pub = if is_ed25519 { "id_ed25519.pub" } else { "id_rsa.pub" };
+
+            let current_priv = priv_input.value();
+            if current_priv.trim().is_empty()
+                || current_priv.trim().ends_with("id_rsa.pem")
+                || current_priv.trim().ends_with("id_ed25519.pem")
+            {
+                priv_input.set_value(default_priv);
+            }
+
+            let current_pub = pub_input.value();
+            if current_pub.trim().is_empty()
+                || current_pub.trim().ends_with("id_rsa.pub")
+                || current_pub.trim().ends_with("id_ed25519.pub")
+            {
+                pub_input.set_value(default_pub);
+            }
+        }
+    });
+
     btn_generate.set_callback({
+        let choice_key_type = choice_key_type.clone();
         let choice_bits = choice_bits.clone();
         let inp_priv = input_priv.clone();
         let inp_pub = input_pub.clone();
         let chk_ssh = check_ssh.clone();
         let inp_comment = input_comment.clone();
+        let pub_format_choice = choice_pub_format.clone();
         let mut btn_gen = btn_generate.clone();
         let mut tb = text_buffer.clone();
         let prog = progress.clone();
@@ -247,7 +314,7 @@ pub fn setup_keygen_callbacks(
             let priv_path = inp_priv.value();
             let pub_path = inp_pub.value();
             let gen_ssh = chk_ssh.is_checked();
-            let comment = inp_comment.value();
+            let comment_value = inp_comment.value().trim().to_string();
 
             let priv_trimmed = priv_path.trim().trim_matches('"').to_string();
             let pub_trimmed = pub_path.trim().trim_matches('"').to_string();
@@ -271,12 +338,19 @@ pub fn setup_keygen_callbacks(
                 2 => 4096,
                 _ => 2048,
             };
+            let key_type = choice_key_type.value();
+            let output_format = match pub_format_choice.value() {
+                1 => crate::modules::keygen::PublicKeyOutputFormat::Pem,
+                _ => crate::modules::keygen::PublicKeyOutputFormat::OpenSsh,
+            };
 
             let tb_clone = tb.clone();
             let prog_clone = prog.clone();
             let btn_gen_clone = btn_gen.clone();
             let ssh_store_clone = ssh_key_store.clone();
             let global_run_clone = global_run.clone();
+            let comment_for_file = if comment_value.is_empty() { None } else { Some(comment_value.clone()) };
+            let comment_for_copy = comment_value.clone();
 
             // 開啟背景執行緒進行繁重的質數計算任務
             std::thread::spawn(move || {
@@ -291,29 +365,50 @@ pub fn setup_keygen_callbacks(
                 });
 
                 let mut report = String::new();
-                let success = match crate::modules::keygen::KeyGen::generate_rsa_key_pair(bits, &priv_trimmed, &pub_trimmed) {
-                    Ok(_) => {
-                        report.push_str(&format!("[Success] RSA Key Pair generated successfully!\nPrivate Key: {}\nPublic Key: {}\n", priv_trimmed, pub_trimmed));
-                        
-                        if gen_ssh {
-                            match crate::modules::keygen::KeyGen::load_private_key_from_file(&priv_trimmed) {
-                                Ok(pkey) => {
-                                    let ssh_pub = crate::modules::keygen::KeyGen::generate_openssh_public_key(&pkey, &comment);
-                                    if let Ok(mut store) = ssh_store_clone.lock() {
-                                        *store = ssh_pub;
-                                    }
-                                    report.push_str("\nOpenSSH public key format generated. Click Copy to use.\n");
+                let success = if key_type == 1 {
+                    match crate::modules::keygen::KeyGen::generate_ed25519_key_pair(&priv_trimmed, &pub_trimmed, comment_for_file.as_deref(), output_format) {
+                        Ok(verifying_key) => {
+                            report.push_str(&format!("[Success] Ed25519 Key Pair generated successfully!\nPrivate Key: {}\nPublic Key: {}\n", priv_trimmed, pub_trimmed));
+
+                            if gen_ssh {
+                                let ssh_pub = crate::modules::keygen::KeyGen::generate_openssh_public_key_for_ed25519(&verifying_key, &comment_for_copy);
+                                if let Ok(mut store) = ssh_store_clone.lock() {
+                                    *store = ssh_pub;
                                 }
-                                Err(_) => {
-                                    report.push_str("Note: Keys generated, but failed to load private key for OpenSSH conversion.\n");
+                                report.push_str("\nOpenSSH public key format generated. Click Copy to use.\n");
+                            }
+                            true
+                        }
+                        Err(err) => {
+                            report.push_str(&format!("[Failed] Ed25519 key generation failed: {}\n", err));
+                            false
+                        }
+                    }
+                } else {
+                    match crate::modules::keygen::KeyGen::generate_rsa_key_pair(bits, &priv_trimmed, &pub_trimmed, comment_for_file.as_deref(), output_format) {
+                        Ok(_) => {
+                            report.push_str(&format!("[Success] RSA Key Pair generated successfully!\nPrivate Key: {}\nPublic Key: {}\n", priv_trimmed, pub_trimmed));
+                            
+                            if gen_ssh {
+                                match crate::modules::keygen::KeyGen::load_private_key_from_file(&priv_trimmed) {
+                                    Ok(pkey) => {
+                                        let ssh_pub = crate::modules::keygen::KeyGen::generate_openssh_public_key(&pkey, &comment_for_copy);
+                                        if let Ok(mut store) = ssh_store_clone.lock() {
+                                            *store = ssh_pub;
+                                        }
+                                        report.push_str("\nOpenSSH public key format generated. Click Copy to use.\n");
+                                    }
+                                    Err(_) => {
+                                        report.push_str("Note: Keys generated, but failed to load private key for OpenSSH conversion.\n");
+                                    }
                                 }
                             }
+                            true
                         }
-                        true
-                    }
-                    Err(_) => {
-                        report.push_str("[Failed] Key generation failed. Check file paths or folder permissions!\n");
-                        false
+                        Err(err) => {
+                            report.push_str(&format!("[Failed] RSA key generation failed: {}\n", err));
+                            false
+                        }
                     }
                 };
 
@@ -592,9 +687,10 @@ pub fn setup_hash_callbacks(
             }
 
             let algorithm = match alg_idx {
-                1 => crate::modules::hashutil::HashAlgorithm::SHA1,
-                2 => crate::modules::hashutil::HashAlgorithm::SHA256,
-                3 => crate::modules::hashutil::HashAlgorithm::SHA3_256,
+                1 => crate::modules::hashutil::HashAlgorithm::CRC32,
+                2 => crate::modules::hashutil::HashAlgorithm::SHA1,
+                3 => crate::modules::hashutil::HashAlgorithm::SHA256,
+                4 => crate::modules::hashutil::HashAlgorithm::SHA3_256,
                 _ => crate::modules::hashutil::HashAlgorithm::MD5,
             };
             let alg_name = algorithm.to_string();
@@ -680,8 +776,8 @@ pub fn setup_hash_callbacks(
             }
 
             let mut file_chooser = dialog::NativeFileChooser::new(dialog::NativeFileChooserType::BrowseFile);
-            file_chooser.set_title("Select Checksum File (*.sha256; *.md5; *.txt)");
-            file_chooser.set_filter("Checksum Files\t*.{sha256,sha1,md5,txt}\nAll Files\t*.*");
+            file_chooser.set_title("Select Checksum File (*.sha256; *.md5; *.crc32; *.txt)");
+            file_chooser.set_filter("Checksum Files\t*.{sha256,sha1,md5,crc32,txt}\nAll Files\t*.*");
             file_chooser.show();
             let path_str = file_chooser.filename().to_string_lossy().to_string();
             if path_str.is_empty() { return; }

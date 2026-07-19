@@ -1,10 +1,17 @@
 use base64::{engine::general_purpose, Engine as _};
-use rand::rngs::OsRng;
+use ed25519_dalek::{SigningKey, VerifyingKey};
+use rand::{rngs::OsRng, RngCore};
 use rsa::{
     pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey, LineEnding},
     traits::PublicKeyParts,
     BigUint, RsaPrivateKey, RsaPublicKey,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PublicKeyOutputFormat {
+    Pem,
+    OpenSsh,
+}
 
 pub struct KeyGen;
 
@@ -16,6 +23,8 @@ impl KeyGen {
         bits: usize,
         private_path: &str,
         public_path: &str,
+        comment: Option<&str>,
+        output_format: PublicKeyOutputFormat,
     ) -> Result<(), String> {
         if bits < 1024 {
             return Err("Key size must be at least 1024 bits".into());
@@ -35,16 +44,62 @@ impl KeyGen {
             .write_pkcs8_pem_file(private_path, LineEnding::LF)
             .map_err(|e| format!("Failed to write private key: {}", e))?;
 
-        // 寫出 X.509 (SPKI) 格式的公鑰 (.pem)
-        pub_key
-            .write_public_key_pem_file(public_path, LineEnding::LF)
-            .map_err(|e| format!("Failed to write public key: {}", e))?;
+        match output_format {
+            PublicKeyOutputFormat::Pem => {
+                let public_key_pem = pub_key.to_public_key_pem(LineEnding::LF)
+                    .map_err(|e| format!("Failed to encode public key: {}", e))?;
+                std::fs::write(public_path, public_key_pem.as_bytes())
+                    .map_err(|e| format!("Failed to write public key: {}", e))?;
+            }
+            PublicKeyOutputFormat::OpenSsh => {
+                let openssh_pub = Self::generate_openssh_public_key(&priv_key, comment.unwrap_or_default());
+                std::fs::write(public_path, format!("{}\n", openssh_pub))
+                    .map_err(|e| format!("Failed to write OpenSSH public key: {}", e))?;
+            }
+        }
 
         Ok(())
     }
 
     /// ===================================================================
-    /// 🔑 2. 從檔案載入私鑰
+    /// 🔑 2. 產生 Ed25519 金鑰對
+    /// ===================================================================
+    pub fn generate_ed25519_key_pair(
+        private_path: &str,
+        public_path: &str,
+        comment: Option<&str>,
+        output_format: PublicKeyOutputFormat,
+    ) -> Result<VerifyingKey, String> {
+        let mut rng = OsRng;
+        let mut secret_key_bytes = [0u8; 32];
+        rng.fill_bytes(&mut secret_key_bytes);
+        let signing_key = SigningKey::from_bytes(&secret_key_bytes);
+        let verifying_key = signing_key.verifying_key();
+
+        let private_key_pem = signing_key.to_pkcs8_pem(LineEnding::LF)
+            .map_err(|e| format!("Failed to encode Ed25519 private key: {}", e))?;
+        std::fs::write(private_path, private_key_pem.as_bytes())
+            .map_err(|e| format!("Failed to write Ed25519 private key: {}", e))?;
+
+        match output_format {
+            PublicKeyOutputFormat::Pem => {
+                let public_key_pem = verifying_key.to_public_key_pem(LineEnding::LF)
+                    .map_err(|e| format!("Failed to encode Ed25519 public key: {}", e))?;
+                std::fs::write(public_path, public_key_pem.as_bytes())
+                    .map_err(|e| format!("Failed to write Ed25519 public key: {}", e))?;
+            }
+            PublicKeyOutputFormat::OpenSsh => {
+                let openssh_pub = Self::generate_openssh_public_key_for_ed25519(&verifying_key, comment.unwrap_or_default());
+                std::fs::write(public_path, format!("{}\n", openssh_pub))
+                    .map_err(|e| format!("Failed to write OpenSSH public key: {}", e))?;
+            }
+        }
+
+        Ok(verifying_key)
+    }
+
+    /// ===================================================================
+    /// 🔑 3. 從檔案載入私鑰
     /// ===================================================================
     pub fn load_private_key_from_file(file_path: &str) -> Result<RsaPrivateKey, String> {
         RsaPrivateKey::read_pkcs8_pem_file(file_path)
@@ -52,7 +107,7 @@ impl KeyGen {
     }
 
     /// ===================================================================
-    /// 🔑 3. 【純 Rust 現代化 API】的 OpenSSH 公鑰生成函式
+    /// 🔑 4. 【純 Rust 現代化 API】的 OpenSSH 公鑰生成函式 (RSA)
     /// ===================================================================
     pub fn generate_openssh_public_key(pkey: &RsaPrivateKey, comment: &str) -> String {
         let n = pkey.n();
@@ -75,6 +130,31 @@ impl KeyGen {
         let b64 = general_purpose::STANDARD.encode(&blob);
 
         let mut final_key = format!("ssh-rsa {}", b64);
+        if !comment.is_empty() {
+            final_key.push(' ');
+            final_key.push_str(comment);
+        }
+
+        final_key
+    }
+
+    /// ===================================================================
+    /// 🔑 5. OpenSSH 公鑰生成函式 (Ed25519)
+    /// ===================================================================
+    pub fn generate_openssh_public_key_for_ed25519(pkey: &VerifyingKey, comment: &str) -> String {
+        let mut blob = Vec::new();
+
+        let type_str = "ssh-ed25519";
+        blob.extend_from_slice(&(type_str.len() as u32).to_be_bytes());
+        blob.extend_from_slice(type_str.as_bytes());
+
+        let pubkey_bytes = pkey.as_bytes();
+        blob.extend_from_slice(&(pubkey_bytes.len() as u32).to_be_bytes());
+        blob.extend_from_slice(pubkey_bytes);
+
+        let b64 = general_purpose::STANDARD.encode(&blob);
+
+        let mut final_key = format!("ssh-ed25519 {}", b64);
         if !comment.is_empty() {
             final_key.push(' ');
             final_key.push_str(comment);
@@ -126,7 +206,7 @@ mod tests {
         let pub_path = temp_file_path("test_id_rsa.pub.pem");
 
         // 1. 測試：產生 1024-bit RSA 金鑰對 (為求測試快速使用 1024 bits)
-        let res = KeyGen::generate_rsa_key_pair(1024, priv_path.to_str().unwrap(), pub_path.to_str().unwrap());
+        let res = KeyGen::generate_rsa_key_pair(1024, priv_path.to_str().unwrap(), pub_path.to_str().unwrap(), Some("kitana-user"), PublicKeyOutputFormat::OpenSsh);
         assert!(res.is_ok(), "金鑰產生失敗: {:?}", res.err());
 
         // 2. 測試：讀取剛剛寫入的私鑰
@@ -140,6 +220,38 @@ mod tests {
         assert!(openssh_pub.ends_with(" kitana-user"), "OpenSSH 公鑰未包含正確的 Comment");
 
         // 4. 清理測試產生的暫存檔案
+        let _ = fs::remove_file(&priv_path);
+        let _ = fs::remove_file(&pub_path);
+    }
+
+    #[test]
+    fn test_generate_ed25519_key_pair() {
+        let priv_path = temp_file_path("test_id_ed25519.pem");
+        let pub_path = temp_file_path("test_id_ed25519.pub.pem");
+
+        let res = KeyGen::generate_ed25519_key_pair(priv_path.to_str().unwrap(), pub_path.to_str().unwrap(), Some("kitana-user"), PublicKeyOutputFormat::OpenSsh);
+        assert!(res.is_ok(), "Ed25519 金鑰產生失敗: {:?}", res.err());
+
+        let verifying_key = res.unwrap();
+        let openssh_pub = KeyGen::generate_openssh_public_key_for_ed25519(&verifying_key, "kitana-user");
+        assert!(openssh_pub.starts_with("ssh-ed25519 "), "Ed25519 OpenSSH 公鑰格式錯誤");
+        assert!(openssh_pub.ends_with(" kitana-user"), "Ed25519 OpenSSH 公鑰未包含正確的 Comment");
+
+        let _ = fs::remove_file(&priv_path);
+        let _ = fs::remove_file(&pub_path);
+    }
+
+    #[test]
+    fn test_generate_rsa_key_pair_writes_pem_public_key_when_requested() {
+        let priv_path = temp_file_path("test_id_rsa_pem.pem");
+        let pub_path = temp_file_path("test_id_rsa_pem.pub");
+
+        let res = KeyGen::generate_rsa_key_pair(1024, priv_path.to_str().unwrap(), pub_path.to_str().unwrap(), Some("kitana-user"), PublicKeyOutputFormat::Pem);
+        assert!(res.is_ok(), "PEM 公鑰輸出失敗: {:?}", res.err());
+
+        let written = fs::read_to_string(&pub_path).expect("Read generated PEM public key file");
+        assert!(written.contains("BEGIN PUBLIC KEY"), "Generated public key file should be PEM format");
+
         let _ = fs::remove_file(&priv_path);
         let _ = fs::remove_file(&pub_path);
     }

@@ -1,8 +1,8 @@
 1 ICON "app.ico"
 
 1 VERSIONINFO
-FILEVERSION     0,1,1,0
-PRODUCTVERSION  0,1,1,0
+FILEVERSION     0,1,2,0
+PRODUCTVERSION  0,1,2,0
 FILEFLAGSMASK   0x3fL
 FILEFLAGS       0
 FILEOS          0x4L
@@ -15,12 +15,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "JohnnyCage Studio"
             VALUE "FileDescription",  "Kitana Cryptool - Crypto Engine Matrix"
-            VALUE "FileVersion",      "0.1.1.0"
+            VALUE "FileVersion",      "0.1.2.0"
             VALUE "InternalName",     "KitanaCryptool"
             VALUE "LegalCopyright",   "Copyright (c) 2026 JohnnyCage Studio. All rights reserved."
             VALUE "OriginalFilename", "Kitana_Cryptool.exe"
             VALUE "ProductName",      "Kitana Cryptool"
-            VALUE "ProductVersion",   "0.1.1.0"
+            VALUE "ProductVersion",   "0.1.2.0"
         END
     END
     BLOCK "VarFileInfo"

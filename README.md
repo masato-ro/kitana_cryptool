@@ -8,8 +8,8 @@ Kitana Cryptool is a versatile cryptographic utility application built with Rust
 
 *   **AES Crypt**: Securely encrypt and decrypt files using AES-256-CBC with PBKDF2 key derivation. Features file streaming to handle large files efficiently without exhausting memory.
 *   **RSA Crypt**: Hybrid encryption (AES-256 + RSA) for both texts and files of any size, overcoming traditional RSA size limits through streaming/chunking. Supports generating and verifying digital signatures (Sign/Verify) for both texts and files to ensure data authenticity and integrity. Integrates drag-and-drop or file browsing for seamless file-based workflows.
-*   **RSA Key Generator**: Generate RSA key pairs (1024, 2048, 4096 bits) and export them in standard PEM formats as well as the OpenSSH public key format.
-*   **Hash Utility**: Calculate MD5, SHA-1, SHA-256, and SHA3-256 hashes for plain texts and files. Easily verify file integrity by comparing computed hashes against existing checksum files.
+*   **RSA/Ed25519 Key Generator**: Generate RSA or Ed25519 key pairs and write the public output to an OpenSSH-compatible `.pub` file by default. Switching the key type automatically updates the default output filenames to `id_rsa.pem`/`id_rsa.pub` for RSA or `id_ed25519.pem`/`id_ed25519.pub` for Ed25519, and the browse dialog uses the same current defaults. An optional checkbox can also copy the same OpenSSH public key to the clipboard.
+*   **Hash Utility**: Calculate MD5, CRC32, SHA-1, SHA-256, and SHA3-256 hashes for plain texts and files. Easily verify file integrity by comparing computed hashes against existing checksum files.
 *   **Password Generator**: Generate highly secure random passwords with customizable length and character sets (uppercase, lowercase, digits, symbols), complete with a visual password strength indicator.
 *   **Cross-platform GUI**: Powered by the FLTK framework for a lightweight, fast, and native-feeling interface.
 
@@ -41,6 +41,7 @@ Depending on your operating system, you might also need to install CMake and a C
 This project uses the following open-source libraries:
 *   fltk-rs (MIT/LGPL)
 *   RustCrypto (`aes`, `cbc`, `cipher`, `md-5`, `pbkdf2`, `rsa`, `sha1`, `sha2`, `sha3`, `signature`) (MIT/Apache 2.0)
+*   `crc32fast` for CRC32 hashing support (MIT/Apache 2.0)
 *   rand, `getrandom` & `base64` (MIT/Apache 2.0)
 *   sys-locale (MIT/Apache 2.0)
 *   webbrowser (MIT/Apache 2.0)

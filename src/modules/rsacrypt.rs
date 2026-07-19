@@ -1,10 +1,11 @@
 use aes::Aes256;
+use base64::{engine::general_purpose, Engine as _};
 use cbc::{Decryptor, Encryptor};
 use cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use rand::{rngs::OsRng, RngCore};
 use rsa::{
     pkcs8::{DecodePrivateKey, DecodePublicKey},
-    Oaep, RsaPrivateKey, RsaPublicKey,
+    BigUint, Oaep, RsaPrivateKey, RsaPublicKey,
 };
 use sha2::Sha256;
 use std::fs::File;
@@ -21,8 +22,73 @@ impl RSACrypt {
     /// 🔑 從 PEM 檔案載入公鑰
     /// ===================================================================
     pub fn load_public_key(file_path: &str) -> Result<RsaPublicKey, String> {
-        RsaPublicKey::read_public_key_pem_file(file_path)
+        if let Ok(pub_key) = RsaPublicKey::read_public_key_pem_file(file_path) {
+            return Ok(pub_key);
+        }
+
+        let contents = std::fs::read_to_string(file_path)
+            .map_err(|e| format!("載入公鑰失敗: {}", e))?;
+        Self::parse_openssh_public_key(&contents)
             .map_err(|e| format!("載入公鑰失敗: {}", e))
+    }
+
+    fn parse_openssh_public_key(contents: &str) -> Result<RsaPublicKey, String> {
+        let trimmed = contents.trim();
+        let fields: Vec<&str> = trimmed.split_whitespace().collect();
+        if fields.len() < 2 {
+            return Err("OpenSSH public key format is invalid".into());
+        }
+
+        let key_type = fields[0];
+        if key_type != "ssh-rsa" {
+            return Err(format!("Unsupported OpenSSH key type: {}", key_type));
+        }
+
+        let key_blob = general_purpose::STANDARD.decode(fields[1])
+            .map_err(|e| format!("Failed to decode OpenSSH key blob: {}", e))?;
+
+        let mut offset = 0usize;
+        let parsed_type = Self::read_string(&key_blob, &mut offset)?;
+        if String::from_utf8_lossy(&parsed_type) != "ssh-rsa" {
+            return Err("OpenSSH key blob does not contain an RSA public key".into());
+        }
+
+        let exponent_bytes = Self::read_mpint(&key_blob, &mut offset)?;
+        let modulus_bytes = Self::read_mpint(&key_blob, &mut offset)?;
+
+        let exponent = BigUint::from_bytes_be(&exponent_bytes);
+        let modulus = BigUint::from_bytes_be(&modulus_bytes);
+
+        RsaPublicKey::new(modulus, exponent)
+            .map_err(|e| format!("Failed to construct RSA public key from OpenSSH data: {}", e))
+    }
+
+    fn read_string(blob: &[u8], offset: &mut usize) -> Result<Vec<u8>, String> {
+        if *offset + 4 > blob.len() {
+            return Err("Truncated OpenSSH string length".into());
+        }
+        let length = u32::from_be_bytes(blob[*offset..*offset + 4].try_into().unwrap()) as usize;
+        *offset += 4;
+        if *offset + length > blob.len() {
+            return Err("Truncated OpenSSH string payload".into());
+        }
+        let data = blob[*offset..*offset + length].to_vec();
+        *offset += length;
+        Ok(data)
+    }
+
+    fn read_mpint(blob: &[u8], offset: &mut usize) -> Result<Vec<u8>, String> {
+        if *offset + 4 > blob.len() {
+            return Err("Truncated OpenSSH mpint length".into());
+        }
+        let length = u32::from_be_bytes(blob[*offset..*offset + 4].try_into().unwrap()) as usize;
+        *offset += 4;
+        if *offset + length > blob.len() {
+            return Err("Truncated OpenSSH mpint payload".into());
+        }
+        let data = blob[*offset..*offset + length].to_vec();
+        *offset += length;
+        Ok(data)
     }
 
     /// ===================================================================
@@ -350,7 +416,7 @@ mod tests {
         let pub_str = pub_path.to_str().unwrap();
 
         // 產生測試用金鑰對 (為求快速測試使用 2048 bits)
-        KeyGen::generate_rsa_key_pair(2048, priv_str, pub_str).unwrap();
+        KeyGen::generate_rsa_key_pair(2048, priv_str, pub_str, Some("kitana-test"), crate::modules::keygen::PublicKeyOutputFormat::OpenSsh).unwrap();
 
         let pub_key = RSACrypt::load_public_key(pub_str).unwrap();
         let priv_key = RSACrypt::load_private_key(priv_str).unwrap();
@@ -376,7 +442,7 @@ mod tests {
         let priv_str = priv_path.to_str().unwrap();
         let pub_str = pub_path.to_str().unwrap();
 
-        KeyGen::generate_rsa_key_pair(2048, priv_str, pub_str).unwrap();
+        KeyGen::generate_rsa_key_pair(2048, priv_str, pub_str, Some("kitana-test"), crate::modules::keygen::PublicKeyOutputFormat::OpenSsh).unwrap();
 
         let pub_key = RSACrypt::load_public_key(pub_str).unwrap();
         let priv_key = RSACrypt::load_private_key(priv_str).unwrap();
@@ -402,7 +468,7 @@ mod tests {
         let pub_str = pub_path.to_str().unwrap();
 
         // 產生測試用金鑰對
-        KeyGen::generate_rsa_key_pair(2048, priv_str, pub_str).unwrap();
+        KeyGen::generate_rsa_key_pair(2048, priv_str, pub_str, Some("kitana-test"), crate::modules::keygen::PublicKeyOutputFormat::OpenSsh).unwrap();
 
         let pub_key = RSACrypt::load_public_key(pub_str).unwrap();
         let priv_key = RSACrypt::load_private_key(priv_str).unwrap();
@@ -432,7 +498,7 @@ mod tests {
         let priv_str = priv_path.to_str().unwrap();
         let pub_str = pub_path.to_str().unwrap();
 
-        KeyGen::generate_rsa_key_pair(2048, priv_str, pub_str).unwrap();
+        KeyGen::generate_rsa_key_pair(2048, priv_str, pub_str, Some("kitana-test"), crate::modules::keygen::PublicKeyOutputFormat::OpenSsh).unwrap();
         let pub_key = RSACrypt::load_public_key(pub_str).unwrap();
         let priv_key = RSACrypt::load_private_key(priv_str).unwrap();
 
